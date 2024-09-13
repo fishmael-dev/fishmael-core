@@ -32,7 +32,10 @@ pub struct IdentifyProperties {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum GatewayEventPayload {
+pub enum Payload {
+    Bool(bool),
+    Int(u64),
+    OptInt(Option<u64>),
     Identify {
         token: String,
         properties: IdentifyProperties,
@@ -49,31 +52,24 @@ pub enum GatewayEventPayload {
 
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct GatewayEvent<T: 'static> {
+pub struct GatewayEvent {
     op: GatewayOpcode,
-    d: Option<T>,
+    d: Option<Payload>,
     s: Option<u64>,
     t: Option<String>,
 }
 
 
-macro_rules! impl_event_for {
-    ($( $t:ty ), +) => { $(
-        impl GatewayEvent< $t > {
-            pub fn new(op: GatewayOpcode, d: $t) -> GatewayEvent< $t > {
-                GatewayEvent {
-                    op,
-                    d: Some(d),
-                    s: None,
-                    t: None,
-                }
-            }
+impl GatewayEvent {
+    pub fn new(op: GatewayOpcode, d: Payload) -> Self {
+        GatewayEvent {
+            op,
+            d: Some(d),
+            s: None,
+            t: None
         }
-    )* };
+    }
 }
-
-
-impl_event_for!(u32, u64, GatewayEventPayload);
 
 
 pub struct Client {
@@ -83,7 +79,7 @@ pub struct Client {
     pub intents: u64,
     heartbeat: Arc<Mutex<Option<JoinHandle<()>>>>,
     rng: Arc<Mutex<StdRng>>,
-    seq: Arc<Mutex<u64>>,
+    seq: Arc<Mutex<Option<u64>>>,
 }
 
 
@@ -102,7 +98,7 @@ impl Client {
             intents,
             heartbeat: Arc::new(Mutex::new(None)),
             rng: Arc::new(Mutex::new(StdRng::from_entropy())),
-            seq: Arc::new(Mutex::new(0)),
+            seq: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -114,15 +110,15 @@ impl Client {
         let rx = Arc::new(Mutex::new(rx));
 
         // Start heartbeat...
-        self.start_heartbeat(Arc::clone(&tx), Arc::clone(&rx)).await?;
+        self.start_heartbeat(Arc::clone(&tx), Arc::clone(&rx), true).await?;
 
         // Send Identify...
         Client::send_gateway_event(
             Arc::clone(&tx),
             // TODO: This sucks wtf
-            GatewayEvent::<GatewayEventPayload>::new(
+            GatewayEvent::new(
                 GatewayOpcode::IDENTIFY,
-                GatewayEventPayload::Identify {
+                Payload::Identify {
                     token: self.token.to_string(),
                     properties: IdentifyProperties {
                         os: env::consts::OS.to_string(),
@@ -140,7 +136,9 @@ impl Client {
             .next()
             .await {
                 match msg {
-                    Ok(Message::Text(msg)) => self.process_gateway_event(Arc::clone(&tx), msg).await?,
+                    Ok(Message::Text(msg)) => {
+                        self.process_gateway_event(Arc::clone(&tx), Arc::clone(&rx), msg).await?;
+                    },
                     _ => println!("Failed to decode websocket message: {:?}", msg),
                 };
             };
@@ -152,6 +150,7 @@ impl Client {
         &mut self,
         tx: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
         rx: Arc<Mutex<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>,
+        wait: bool,
     ) -> Result<()> {
         let mut heartbeat = self.heartbeat.lock().await;
         if heartbeat.is_some() {
@@ -163,17 +162,20 @@ impl Client {
         if let Some(Ok(Message::Text(msg))) = rx.lock().await.next().await {
             if let Ok(GatewayEvent {
                 op: GatewayOpcode::HELLO,
-                d: Some(GatewayEventPayload::Hello { heartbeat_interval }),
+                d: Some(Payload::Hello { heartbeat_interval }),
                 ..
             }) = serde_json::from_str(&msg) {
-                // Sleep a random time from 0..heartbeat_interval for the first
-                // heartbeat.
-                time::sleep(Duration::from_millis(
-                    self.rng.lock().await.gen_range(0..heartbeat_interval)
-                )).await;
+                if wait {
+                    // Sleep a random time from 0..heartbeat_interval for the first
+                    // heartbeat.
+                    time::sleep(Duration::from_millis(
+                        self.rng.lock().await.gen_range(0..heartbeat_interval)
+                    )).await;
+                }
+
                 Client::send_gateway_event(
                     Arc::clone(&tx),
-                    GatewayEvent::<u64>::new(GatewayOpcode::HEARTBEAT, *self.seq.lock().await),
+                    GatewayEvent::new(GatewayOpcode::HEARTBEAT, Payload::OptInt(*self.seq.lock().await)),
                 ).await?;
 
                 let loop_seq = Arc::clone(&self.seq);
@@ -181,7 +183,7 @@ impl Client {
                     loop {
                         match Client::send_gateway_event(
                             Arc::clone(&tx),
-                            GatewayEvent::<u64>::new(GatewayOpcode::HEARTBEAT, *loop_seq.lock().await),
+                            GatewayEvent::new(GatewayOpcode::HEARTBEAT, Payload::OptInt(*loop_seq.lock().await)),
                         ).await {
                             Ok(_) => time::sleep(Duration::from_millis(heartbeat_interval)).await,
                             Err(_) => break,  // TODO: log this
@@ -194,9 +196,9 @@ impl Client {
         Ok(())
     }
 
-    async fn send_gateway_event<T: Serialize>(
+    async fn send_gateway_event(
         tx: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
-        event: GatewayEvent<T>,
+        event: GatewayEvent,
     ) -> Result<()> {
         let json = serde_json::json!(event).to_string();
         println!("{}", json);
@@ -214,21 +216,27 @@ impl Client {
     async fn process_gateway_event(
         &mut self,
         tx: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
+        rx: Arc<Mutex<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>,
         payload: String,
     ) -> Result<()> {
+        println!("RECEIVED: {}", payload);
+
         if let Ok(GatewayEvent {op, d, t, s}) = serde_json::from_str(&payload) {
             if let Some(s) = s {
-                *self.seq.lock().await = s;
+                *self.seq.lock().await = Some(s);
             }
 
             match (op, d) {
-                (GatewayOpcode::DISPATCH, Some(GatewayEventPayload::Ready { v, session_id })) => {
+                (GatewayOpcode::DISPATCH, Some(Payload::Ready { v, session_id })) => {
                     println!("Ready! API version {}, session id {}.", v, session_id);
                 }
                 (GatewayOpcode::ACK, None) => {
                     println!("got ack!");
                 },
-                (GatewayOpcode::HEARTBEAT, _) => todo!(),
+                (GatewayOpcode::HEARTBEAT, _) => {
+                    // Immediately restart heartbeat...
+                    self.start_heartbeat(tx, rx, false).await?;
+                }
                 _ => todo!(),
             }
         }
