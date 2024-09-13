@@ -9,6 +9,7 @@ use std::{env, sync::Arc, time::Duration};
 use tokio::{net::TcpStream, sync::Mutex, task::JoinHandle, time};
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use anyhow::{Context, Result};
+use serde_aux::field_attributes::deserialize_number_from_string;
 
 
 #[derive(Debug, Serialize_repr, Deserialize_repr)]
@@ -17,8 +18,16 @@ pub enum GatewayOpcode {
     DISPATCH = 0,
     HEARTBEAT = 1,
     IDENTIFY = 2,
+    PRESENCE = 3,
+    VOICE_STATE = 4,
+    VOICE_PING = 5,
+    RESUME = 6,
+    RECONNECT = 7,
+    REQUEST_MEMBERS = 8,
+    INVALIDATE_SESSION = 9,
     HELLO = 10,
     ACK = 11,
+    GUILD_SYNC = 12,
 }
 
 
@@ -46,8 +55,54 @@ pub enum Payload {
     },
     Ready {
         v: u8,
+        user: User,
         session_id: String,
+        resume_gateway_url: String,
     }
+}
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AvatarDecorationData {
+    asset: String,
+    sku_id: u64,
+}
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct User {
+    #[serde(deserialize_with="deserialize_number_from_string")]
+    id: u64,
+    username: String,
+    discriminator: String,
+    #[serde(default)]
+    global_name: Option<String>,
+    #[serde(default)]
+    avatar: Option<String>,
+    #[serde(default)]
+    bot: bool,
+    #[serde(default)]
+    system: bool,
+    #[serde(default)]
+    mfa_enabled: bool,
+    #[serde(default)]
+    banner: Option<String>,
+    #[serde(default)]
+    accent_color: Option<String>,
+    #[serde(default)]
+    locale: Option<String>,
+    #[serde(default)]
+    verified: bool,
+    #[serde(default)]
+    email: Option<String>,
+    #[serde(default, deserialize_with="deserialize_number_from_string")]
+    flags: u64,
+    #[serde(default, deserialize_with="deserialize_number_from_string")]
+    premium_type: u64,
+    #[serde(default, deserialize_with="deserialize_number_from_string")]
+    public_flags: u64,
+    #[serde(default)]
+    avatar_decoration_data: Option<AvatarDecorationData>,
 }
 
 
@@ -115,7 +170,6 @@ impl Client {
         // Send Identify...
         Client::send_gateway_event(
             Arc::clone(&tx),
-            // TODO: This sucks wtf
             GatewayEvent::new(
                 GatewayOpcode::IDENTIFY,
                 Payload::Identify {
@@ -158,28 +212,30 @@ impl Client {
         }
 
         println!("heartbeat gaming");
+        let msg = rx.lock().await.next().await;
 
-        if let Some(Ok(Message::Text(msg))) = rx.lock().await.next().await {
+        if let Some(Ok(Message::Text(msg))) = msg {
             if let Ok(GatewayEvent {
                 op: GatewayOpcode::HELLO,
                 d: Some(Payload::Hello { heartbeat_interval }),
                 ..
             }) = serde_json::from_str(&msg) {
-                if wait {
-                    // Sleep a random time from 0..heartbeat_interval for the first
-                    // heartbeat.
-                    time::sleep(Duration::from_millis(
-                        self.rng.lock().await.gen_range(0..heartbeat_interval)
-                    )).await;
-                }
-
-                Client::send_gateway_event(
-                    Arc::clone(&tx),
-                    GatewayEvent::new(GatewayOpcode::HEARTBEAT, Payload::OptInt(*self.seq.lock().await)),
-                ).await?;
-
                 let loop_seq = Arc::clone(&self.seq);
+                let initial_delay = self.rng.lock().await.gen_range(0..heartbeat_interval);
+
+                // All of this runs in the background.
                 *heartbeat = Some(tokio::spawn(async move {
+                    if wait {
+                        // Sleep a random time from 0..heartbeat_interval for the first
+                        // heartbeat.
+                        time::sleep(Duration::from_millis(initial_delay)).await;
+                    }
+    
+                    Client::send_gateway_event(
+                        Arc::clone(&tx),
+                        GatewayEvent::new(GatewayOpcode::HEARTBEAT, Payload::OptInt(*loop_seq.lock().await)),
+                    ).await.expect("Balls");
+
                     loop {
                         match Client::send_gateway_event(
                             Arc::clone(&tx),
@@ -221,24 +277,28 @@ impl Client {
     ) -> Result<()> {
         println!("RECEIVED: {}", payload);
 
-        if let Ok(GatewayEvent {op, d, t, s}) = serde_json::from_str(&payload) {
-            if let Some(s) = s {
-                *self.seq.lock().await = Some(s);
-            }
+        match serde_json::from_str(&payload) {
+            Ok(GatewayEvent {op, d, t: _, s}) => {
+                if let Some(s) = s {
+                    *self.seq.lock().await = Some(s);
+                }
 
-            match (op, d) {
-                (GatewayOpcode::DISPATCH, Some(Payload::Ready { v, session_id })) => {
-                    println!("Ready! API version {}, session id {}.", v, session_id);
+                match (op, d) {
+                    (GatewayOpcode::DISPATCH, Some(Payload::Ready { v, user, session_id, resume_gateway_url })) => {
+                        // TODO: Store resume url, implement resuming.
+                        println!("Ready! We are user {:?} ({})", user.username, user.discriminator);
+                    },
+                    (GatewayOpcode::ACK, None) => {
+                        println!("got ack!");
+                    },
+                    (GatewayOpcode::HEARTBEAT, _) => {
+                        // Immediately restart heartbeat...
+                        self.start_heartbeat(tx, rx, false).await?;
+                    }
+                    _ => todo!(),
                 }
-                (GatewayOpcode::ACK, None) => {
-                    println!("got ack!");
-                },
-                (GatewayOpcode::HEARTBEAT, _) => {
-                    // Immediately restart heartbeat...
-                    self.start_heartbeat(tx, rx, false).await?;
-                }
-                _ => todo!(),
-            }
+            },
+            Err(err) => println!("Failed to deserialise: {:?}", err)
         }
 
         Ok(())
