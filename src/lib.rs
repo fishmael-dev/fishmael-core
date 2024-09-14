@@ -1,5 +1,5 @@
 use futures::{
-    stream::{SplitSink, SplitStream, StreamExt},
+    stream::{SplitSink, StreamExt},
     SinkExt,
 };
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -8,7 +8,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{env, sync::Arc, time::Duration};
 use tokio::{net::TcpStream, sync::Mutex, task::JoinHandle, time};
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde_aux::field_attributes::deserialize_number_from_string;
 
 
@@ -133,6 +133,7 @@ pub struct Client {
     pub token: String,
     pub intents: u64,
     heartbeat: Arc<Mutex<Option<JoinHandle<()>>>>,
+    heartbeat_interval: Option<u64>,
     rng: Arc<Mutex<StdRng>>,
     seq: Arc<Mutex<Option<u64>>>,
 }
@@ -152,6 +153,7 @@ impl Client {
             token,
             intents,
             heartbeat: Arc::new(Mutex::new(None)),
+            heartbeat_interval: None,
             rng: Arc::new(Mutex::new(StdRng::from_entropy())),
             seq: Arc::new(Mutex::new(None)),
         }
@@ -159,13 +161,25 @@ impl Client {
 
     pub async fn connect(mut self) -> Result<()>{
         let (ws, _) = connect_async(&self.gateway_url).await?;
-        let (tx, rx) = ws.split();
-
+        let (tx, mut rx) = ws.split();
         let tx = Arc::new(Mutex::new(tx));
-        let rx = Arc::new(Mutex::new(rx));
 
-        // Start heartbeat...
-        self.start_heartbeat(Arc::clone(&tx), Arc::clone(&rx), true).await?;
+        // Wait for Hello and start heartbeat...
+        if let Some(Ok(Message::Text(msg))) = rx.next().await {
+            match serde_json::from_str(&msg) {
+                Ok(GatewayEvent {
+                    op: GatewayOpcode::HELLO,
+                    d: Some(Payload::Hello { heartbeat_interval }),
+                    ..
+                }) => {
+                    self.heartbeat_interval = Some(heartbeat_interval);
+                    self.start_heartbeat(Arc::clone(&tx), true).await?;
+                },
+                _ => bail!("Did not receive Hello event!"),
+            }
+        } else {
+            bail!("Did not receive Hello event!");
+        }
 
         // Send Identify...
         Client::send_gateway_event(
@@ -179,31 +193,27 @@ impl Client {
                         browser: "fishmael".to_string(),
                         device: "fishmael".to_string(),
                     },
-                    intents: self.intents,
+                    intents: self.intents.clone(),
                 }
             ),
         ).await?;
 
         // Listen for incoming events...
-        while let Some(msg) = rx.lock()
-            .await
-            .next()
-            .await {
-                match msg {
-                    Ok(Message::Text(msg)) => {
-                        self.process_gateway_event(Arc::clone(&tx), Arc::clone(&rx), msg).await?;
-                    },
-                    _ => println!("Failed to decode websocket message: {:?}", msg),
-                };
+        while let Some(msg) = rx.next().await {
+            match msg {
+                Ok(Message::Text(msg)) => {
+                    self.process_gateway_event(Arc::clone(&tx), msg).await?;
+                },
+                _ => println!("Failed to decode websocket message: {:?}", msg),
             };
+        };
 
         Ok(())
     }
 
     async fn start_heartbeat(
-        &mut self,
+        &self,
         tx: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
-        rx: Arc<Mutex<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>,
         wait: bool,
     ) -> Result<()> {
         let mut heartbeat = self.heartbeat.lock().await;
@@ -211,42 +221,33 @@ impl Client {
             heartbeat.as_mut().unwrap().abort();
         }
 
-        println!("heartbeat gaming");
-        let msg = rx.lock().await.next().await;
-
-        if let Some(Ok(Message::Text(msg))) = msg {
-            if let Ok(GatewayEvent {
-                op: GatewayOpcode::HELLO,
-                d: Some(Payload::Hello { heartbeat_interval }),
-                ..
-            }) = serde_json::from_str(&msg) {
-                let loop_seq = Arc::clone(&self.seq);
-                let initial_delay = self.rng.lock().await.gen_range(0..heartbeat_interval);
-
-                // All of this runs in the background.
-                *heartbeat = Some(tokio::spawn(async move {
-                    if wait {
-                        // Sleep a random time from 0..heartbeat_interval for the first
-                        // heartbeat.
-                        time::sleep(Duration::from_millis(initial_delay)).await;
-                    }
+        if let Some(heartbeat_interval) = self.heartbeat_interval {
+            let loop_seq = Arc::clone(&self.seq);
+            let initial_delay = self.rng.lock().await.gen_range(0..heartbeat_interval);
     
-                    Client::send_gateway_event(
+            println!("Staring heartbeat with interval {} [ms].", heartbeat_interval);
+
+            // All of this runs in the background.
+            *heartbeat = Some(tokio::spawn(async move {
+                if wait {
+                    // Sleep a random time from 0..heartbeat_interval for the first
+                    // heartbeat.
+                    println!("Waiting {} [ms] until initial heartbeat.", initial_delay);
+                    time::sleep(Duration::from_millis(initial_delay)).await;
+                }
+   
+                loop {
+                    match Client::send_gateway_event(
                         Arc::clone(&tx),
                         GatewayEvent::new(GatewayOpcode::HEARTBEAT, Payload::OptInt(*loop_seq.lock().await)),
-                    ).await.expect("Balls");
-
-                    loop {
-                        match Client::send_gateway_event(
-                            Arc::clone(&tx),
-                            GatewayEvent::new(GatewayOpcode::HEARTBEAT, Payload::OptInt(*loop_seq.lock().await)),
-                        ).await {
-                            Ok(_) => time::sleep(Duration::from_millis(heartbeat_interval)).await,
-                            Err(_) => break,  // TODO: log this
-                        };
-                    }
-                }))
-            }
+                    ).await {
+                        Ok(_) => time::sleep(Duration::from_millis(heartbeat_interval)).await,
+                        Err(_) => break,  // TODO: log this
+                    };
+                }
+            }));
+        } else {
+            bail!("Heartbeat interval was not set before starting heartbeat!");
         }
 
         Ok(())
@@ -270,9 +271,8 @@ impl Client {
     }
 
     async fn process_gateway_event(
-        &mut self,
+        &self,
         tx: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
-        rx: Arc<Mutex<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>,
         payload: String,
     ) -> Result<()> {
         println!("RECEIVED: {}", payload);
@@ -293,7 +293,7 @@ impl Client {
                     },
                     (GatewayOpcode::HEARTBEAT, _) => {
                         // Immediately restart heartbeat...
-                        self.start_heartbeat(tx, rx, false).await?;
+                        self.start_heartbeat(tx, false).await?;
                     }
                     _ => todo!(),
                 }
