@@ -12,23 +12,20 @@ use anyhow::{bail, Context, Result};
 use serde_aux::field_attributes::deserialize_number_from_string;
 
 
-#[derive(Debug, Serialize_repr, Deserialize_repr)]
-#[repr(u8)]
-pub enum GatewayOpcode {
-    DISPATCH = 0,
-    HEARTBEAT = 1,
-    IDENTIFY = 2,
-    PRESENCE = 3,
-    VOICE_STATE = 4,
-    VOICE_PING = 5,
-    RESUME = 6,
-    RECONNECT = 7,
-    REQUEST_MEMBERS = 8,
-    INVALIDATE_SESSION = 9,
-    HELLO = 10,
-    ACK = 11,
-    GUILD_SYNC = 12,
-}
+// Opcodes
+const DISPATCH: u8 = 0;
+const HEARTBEAT: u8 = 1;
+const IDENTIFY: u8 = 2;
+const PRESENCE: u8 = 3;
+const VOICE_STATE: u8 = 4;
+const VOICE_PING: u8 = 5;
+const RESUME: u8 = 6;
+const RECONNECT: u8 = 7;
+const REQUEST_MEMBERS: u8 = 8;
+const INVALIDATE_SESSION: u8 = 9;
+const HELLO: u8 = 10;
+const ACK: u8 = 11;
+const GUILD_SYNC: u8 = 12;
 
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -108,7 +105,7 @@ pub struct User {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GatewayEvent {
-    op: GatewayOpcode,
+    op: u8,
     d: Option<Payload>,
     s: Option<u64>,
     t: Option<String>,
@@ -116,7 +113,7 @@ pub struct GatewayEvent {
 
 
 impl GatewayEvent {
-    pub fn new(op: GatewayOpcode, d: Payload) -> Self {
+    pub fn new(op: u8, d: Payload) -> Self {
         GatewayEvent {
             op,
             d: Some(d),
@@ -168,7 +165,7 @@ impl Client {
         if let Some(Ok(Message::Text(msg))) = rx.next().await {
             match serde_json::from_str(&msg) {
                 Ok(GatewayEvent {
-                    op: GatewayOpcode::HELLO,
+                    op: HELLO,
                     d: Some(Payload::Hello { heartbeat_interval }),
                     ..
                 }) => {
@@ -185,7 +182,7 @@ impl Client {
         Client::send_gateway_event(
             Arc::clone(&tx),
             GatewayEvent::new(
-                GatewayOpcode::IDENTIFY,
+                IDENTIFY,
                 Payload::Identify {
                     token: self.token.to_string(),
                     properties: IdentifyProperties {
@@ -239,7 +236,7 @@ impl Client {
                 loop {
                     match Client::send_gateway_event(
                         Arc::clone(&tx),
-                        GatewayEvent::new(GatewayOpcode::HEARTBEAT, Payload::OptInt(*loop_seq.lock().await)),
+                        GatewayEvent::new(HEARTBEAT, Payload::OptInt(*loop_seq.lock().await)),
                     ).await {
                         Ok(_) => time::sleep(Duration::from_millis(heartbeat_interval)).await,
                         Err(_) => break,  // TODO: log this
@@ -284,14 +281,14 @@ impl Client {
                 }
 
                 match (op, d) {
-                    (GatewayOpcode::DISPATCH, Some(Payload::Ready { v, user, session_id, resume_gateway_url })) => {
+                    (DISPATCH, Some(Payload::Ready { v, user, session_id, resume_gateway_url })) => {
                         // TODO: Store resume url, implement resuming.
                         println!("Ready! We are user {:?} ({})", user.username, user.discriminator);
                     },
-                    (GatewayOpcode::ACK, None) => {
+                    (ACK, None) => {
                         println!("got ack!");
                     },
-                    (GatewayOpcode::HEARTBEAT, _) => {
+                    (HEARTBEAT, _) => {
                         // Immediately restart heartbeat...
                         self.start_heartbeat(tx, false).await?;
                     }
