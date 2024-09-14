@@ -3,14 +3,14 @@ use futures::{
     SinkExt,
 };
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{env, sync::Arc, time::Duration};
 use tokio::{net::TcpStream, sync::Mutex, task::JoinHandle, time};
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use anyhow::{bail, Context, Result};
-use serde_aux::field_attributes::deserialize_number_from_string;
 
+// use crate::models::events::*;
+pub mod models;
+use crate::models::events::*;
 
 // Opcodes
 const DISPATCH: u8 = 0;
@@ -26,102 +26,6 @@ const INVALIDATE_SESSION: u8 = 9;
 const HELLO: u8 = 10;
 const ACK: u8 = 11;
 const GUILD_SYNC: u8 = 12;
-
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct IdentifyProperties {
-    os: String,
-    browser: String,
-    device: String,
-}
-
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Payload {
-    Bool(bool),
-    Int(u64),
-    OptInt(Option<u64>),
-    Identify {
-        token: String,
-        properties: IdentifyProperties,
-        intents: u64,
-    },
-    Hello {
-        heartbeat_interval: u64,
-    },
-    Ready {
-        v: u8,
-        user: User,
-        session_id: String,
-        resume_gateway_url: String,
-    }
-}
-
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AvatarDecorationData {
-    asset: String,
-    sku_id: u64,
-}
-
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct User {
-    #[serde(deserialize_with="deserialize_number_from_string")]
-    id: u64,
-    username: String,
-    discriminator: String,
-    #[serde(default)]
-    global_name: Option<String>,
-    #[serde(default)]
-    avatar: Option<String>,
-    #[serde(default)]
-    bot: bool,
-    #[serde(default)]
-    system: bool,
-    #[serde(default)]
-    mfa_enabled: bool,
-    #[serde(default)]
-    banner: Option<String>,
-    #[serde(default)]
-    accent_color: Option<String>,
-    #[serde(default)]
-    locale: Option<String>,
-    #[serde(default)]
-    verified: bool,
-    #[serde(default)]
-    email: Option<String>,
-    #[serde(default, deserialize_with="deserialize_number_from_string")]
-    flags: u64,
-    #[serde(default, deserialize_with="deserialize_number_from_string")]
-    premium_type: u64,
-    #[serde(default, deserialize_with="deserialize_number_from_string")]
-    public_flags: u64,
-    #[serde(default)]
-    avatar_decoration_data: Option<AvatarDecorationData>,
-}
-
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GatewayEvent {
-    op: u8,
-    d: Option<Payload>,
-    s: Option<u64>,
-    t: Option<String>,
-}
-
-
-impl GatewayEvent {
-    pub fn new(op: u8, d: Payload) -> Self {
-        GatewayEvent {
-            op,
-            d: Some(d),
-            s: None,
-            t: None
-        }
-    }
-}
 
 
 pub struct Client {
@@ -184,7 +88,7 @@ impl Client {
             GatewayEvent::new(
                 IDENTIFY,
                 Payload::Identify {
-                    token: self.token.to_string(),
+                    token: self.token.clone(),
                     properties: IdentifyProperties {
                         os: env::consts::OS.to_string(),
                         browser: "fishmael".to_string(),
@@ -292,7 +196,7 @@ impl Client {
                         // Immediately restart heartbeat...
                         self.start_heartbeat(tx, false).await?;
                     }
-                    _ => todo!(),
+                    _ => println!(),
                 }
             },
             Err(err) => println!("Failed to deserialise: {:?}", err)
