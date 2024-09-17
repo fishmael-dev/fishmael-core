@@ -37,6 +37,8 @@ pub struct Client {
     heartbeat_interval: Option<u64>,
     rng: Arc<Mutex<StdRng>>,
     seq: Arc<Mutex<Option<u64>>>,
+    session_id: Option<String>,
+    resume_gateway_url: Option<String>,
 }
 
 
@@ -57,6 +59,8 @@ impl Client {
             heartbeat_interval: None,
             rng: Arc::new(Mutex::new(StdRng::from_entropy())),
             seq: Arc::new(Mutex::new(None)),
+            session_id: None,
+            resume_gateway_url: None,
         }
     }
 
@@ -172,31 +176,33 @@ impl Client {
     }
 
     async fn process_gateway_event(
-        &self,
+        &mut self,
         tx: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
         payload: String,
     ) -> Result<()> {
         println!("RECEIVED: {}", payload);
 
         match serde_json::from_str(&payload) {
-            Ok(GatewayEvent {op, d, t: _, s}) => {
+            Ok(GatewayEvent {op, d, t, s}) => {
                 if let Some(s) = s {
                     *self.seq.lock().await = Some(s);
                 }
 
                 match (op, d) {
-                    (DISPATCH, Some(Payload::Ready { v, user, session_id, resume_gateway_url })) => {
+                    (DISPATCH, Some(Payload::Ready { v, user, session_id, resume_gateway_url, guilds, shard })) => {
                         // TODO: Store resume url, implement resuming.
+                        self.session_id = Some(session_id);
+                        self.resume_gateway_url = Some(resume_gateway_url);
                         println!("Ready! We are user {:?} ({})", user.username, user.discriminator);
                     },
                     (ACK, None) => {
-                        println!("got ack!");
+                        println!("Heartbeat ACK received.");
                     },
                     (HEARTBEAT, _) => {
                         // Immediately restart heartbeat...
                         self.start_heartbeat(tx, false).await?;
                     }
-                    _ => println!(),
+                    _ => println!("Unknown event: {}", payload),
                 }
             },
             Err(err) => println!("Failed to deserialise: {:?}", err)

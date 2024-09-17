@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::models::users::User;
+use crate::models::{
+    guilds::UnavailableGuild,
+    users::User,
+};
 
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -30,10 +33,26 @@ pub enum Payload {
         user: User,
         session_id: String,
         resume_gateway_url: String,
+        guilds: Vec<UnavailableGuild>,
+        #[serde(default)]
+        shard: (u32, u32),
+        // TODO: application
+    },
+    GuildCreate {
+        joined_at: String,  // TODO: ISO8601 timestamp
+        large: bool,
+        #[serde(default)]
+        unavailable: bool,
+        member_count: u64,
+        // TODO: voice_states,
+        // TODO: members,
+        // TODO: channels,
+        // TODO: threads,
+        // TODO: presences,
+        // TODO: stage_instances,
+        // TODO: guild_scheduled_events,
     }
 }
-
-
 
 
 #[derive(Debug, Serialize, Deserialize)]
