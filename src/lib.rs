@@ -194,6 +194,7 @@ impl Client {
                         self.session_id = Some(session_id);
                         self.resume_gateway_url = Some(resume_gateway_url);
                         println!("Ready! We are user {:?} ({})", user.username, user.discriminator);
+                        println!("Found guild with id {}", guilds.iter().next().unwrap().id)
                     },
                     (ACK, None) => {
                         println!("Heartbeat ACK received.");
