@@ -195,7 +195,7 @@ impl Client {
                         self.resume_gateway_url = Some(resume_gateway_url);
 
                         let id = &guilds.iter().next().unwrap().id;
-                        println!("Ready! We are user {:?} ({})", user.username, user.discriminator);
+                        println!("Ready! We are user {:?} ({})", user.name, user.discriminator);
                         println!("Found guild with id {} (created at {})", &id, &id.timestamp())
                     },
                     (ACK, None) => {
