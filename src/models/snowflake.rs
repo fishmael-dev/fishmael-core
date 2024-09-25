@@ -11,9 +11,11 @@ use std::{
 #[derive(Debug)]
 pub struct UserMarker;
 
-
 #[derive(Debug)]
 pub struct GuildMarker;
+
+#[derive(Debug)]
+pub struct ChannelMarker;
 
 
 #[derive(Debug)]
@@ -71,13 +73,14 @@ impl<'de, T> Deserialize<'de> for Id<T> {
                 formatter.write_str("a discord id")
             }
 
+            fn visit_u64<E: DeError>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(Id::new(value))
+            }
+
             fn visit_str<E: DeError>(self, value: &str) -> Result<Self::Value, E> {
-                println!("WHOA");
-                Ok(
-                    Id::new(
-                        value.parse::<u64>()
-                            .map_err(|_| E::invalid_value(Unexpected::Str(value), &"a u64 string"))?
-                    )
+                self.visit_u64(
+                    value.parse::<u64>()
+                        .map_err(|_| E::invalid_value(Unexpected::Str(value), &"a u64 string"))?
                 )
             }
         }
