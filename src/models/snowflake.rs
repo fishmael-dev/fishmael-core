@@ -21,6 +21,18 @@ pub struct ChannelMarker;
 #[derive(Debug)]
 pub struct RoleMarker;
 
+#[derive(Debug)]
+pub struct MessageMarker;
+
+#[derive(Debug)]
+pub struct TagMarker;
+
+#[derive(Debug)]
+pub struct ApplicationMarker;
+
+#[derive(Debug)]
+pub struct EmojiMarker;
+
 
 #[derive(Debug)]
 pub struct Id<T> {

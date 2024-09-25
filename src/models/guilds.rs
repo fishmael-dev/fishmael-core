@@ -2,6 +2,7 @@ use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
 use super::{
+    channel::Channel,
     member::Member,
     snowflake::{ChannelMarker, GuildMarker, Id, UserMarker},
     util::impl_serde_for_flags,
@@ -24,8 +25,8 @@ pub struct Guild {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approximate_presence_count: Option<u32>,
     pub banner: Option<String>,
-    // #[serde(default)]
-    // pub channels: Vec<Channel>,
+    #[serde(default)]
+    pub channels: Vec<Channel>,
     pub default_message_notifications: u8,  // TODO: implement defaultmessagenotifications struct
     pub description: Option<String>,
     pub discovery_splash: Option<String>,
@@ -79,8 +80,8 @@ pub struct Guild {
     // pub stickers: Vec<Sticker>,
     pub system_channel_flags: SystemChannelFlags,
     pub system_channel_id: Option<Id<ChannelMarker>>,
-    // #[serde(default)]
-    // pub threads: Vec<Channel>,
+    #[serde(default)]
+    pub threads: Vec<Channel>,
     #[serde(default)]
     pub unavailable: bool,
     pub vanity_url_code: Option<String>,
