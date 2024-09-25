@@ -47,8 +47,6 @@ pub struct User {
     pub verified: Option<bool>,
 }
 
-impl_serde_for_flags!(UserFlags);
-
 
 // https://discord.com/developers/docs/resources/user#user-object-user-flags
 bitflags! {
@@ -71,6 +69,8 @@ bitflags! {
         const ACTIVE_DEVELOPER = 1 << 22;
     } 
 }
+
+impl_serde_for_flags!(UserFlags);
 
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
