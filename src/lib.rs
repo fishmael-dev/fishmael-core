@@ -10,7 +10,7 @@ use anyhow::{bail, Context, Result};
 
 // use crate::models::events::*;
 pub mod models;
-use crate::models::events::*;
+use crate::models::event::*;
 
 // Opcodes
 const DISPATCH: u8 = 0;

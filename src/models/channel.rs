@@ -13,7 +13,7 @@ use super::{
         TagMarker,
         UserMarker,
     },
-    users::User,
+    user::User,
     util::impl_serde_for_flags
 };
 

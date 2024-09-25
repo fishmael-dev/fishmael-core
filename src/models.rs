@@ -1,7 +1,7 @@
 pub mod channel;
-pub mod events;
-pub mod guilds;
+pub mod event;
+pub mod guild;
 pub mod member;
 pub mod snowflake;
-pub mod users;
+pub mod user;
 pub mod util;

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::models::{
-    guilds::UnavailableGuild,
-    users::User,
+    guild::UnavailableGuild,
+    user::User,
 };
 
 

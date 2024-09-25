@@ -3,7 +3,7 @@ use serde::{Serialize, Deserialize};
 
 use super::{
     snowflake::{Id, RoleMarker},
-    users::User, util::impl_serde_for_flags,
+    user::User, util::impl_serde_for_flags,
 };
 
 
