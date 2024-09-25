@@ -2,7 +2,7 @@ use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    snowflake::{Id, ChannelMarker, GuildMarker, UserMarker},
+    snowflake::{ChannelMarker, GuildMarker, Id, UserMarker},
     util::impl_serde_for_flags,
 };
 
@@ -15,17 +15,17 @@ pub struct UnavailableGuild {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Guild {
-    // pub afk_channel_id: Option<u64>,
-    // pub afk_timeout: u32,
-    // pub application_id: Option<u64>,
-    // #[serde(skip_serializing_if = "Option::is_none")]
-    // pub approximate_member_count: Option<u32>,
-    // #[serde(skip_serializing_if = "Option::is_none")]
-    // pub approximate_presence_count: Option<u32>,
-    // pub banner: Option<String>,
+    pub afk_channel_id: Option<u64>,
+    pub afk_timeout: u32,
+    pub application_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approximate_member_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approximate_presence_count: Option<u32>,
+    pub banner: Option<String>,
     // #[serde(default)]
     // pub channels: Vec<Channel>,
-    // pub default_message_notifications: u8,
+    pub default_message_notifications: u8,  // TODO: implement defaultmessagenotifications struct
     pub description: Option<String>,
     pub discovery_splash: Option<String>,
     // pub emojis: Vec<Emoji>,
@@ -76,7 +76,7 @@ pub struct Guild {
     // pub stage_instances: Vec<StageInstance>,
     // #[serde(skip_serializing_if = "Vec::is_empty")]
     // pub stickers: Vec<Sticker>,
-    // pub system_channel_flags: SystemChannelFlags,
+    pub system_channel_flags: SystemChannelFlags,
     pub system_channel_id: Option<Id<ChannelMarker>>,
     // #[serde(default)]
     // pub threads: Vec<Channel>,
@@ -147,4 +147,17 @@ bitflags! {
     }
 }
 
-impl_serde_for_flags!(Permissions);
+
+bitflags! {
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+    pub struct SystemChannelFlags: u64 {
+        const SUPPRESS_JOIN_NOTIFICATIONS = 1;        /// Suppress server boost notifications.
+        const SUPPRESS_PREMIUM_SUBSCRIPTIONS = 1 << 1;
+        const SUPPRESS_GUILD_REMINDER_NOTIFICATIONS = 1 << 2;
+        const SUPPRESS_JOIN_NOTIFICATION_REPLIES = 1 << 3;
+        const SUPPRESS_ROLE_SUBSCRIPTION_PURCHASE_NOTIFICATIONS = 1 << 4;
+        const SUPPRESS_ROLE_SUBSCRIPTION_PURCHASE_NOTIFICATION_REPLIES = 1 << 5;
+    }
+}
+
+impl_serde_for_flags!(Permissions, SystemChannelFlags);
