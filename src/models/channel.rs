@@ -266,6 +266,7 @@ pub struct ForumTag {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(from = "u16", into = "u16")]
 pub enum AutoArchiveDuration {
     Hour,
     Day,
@@ -317,7 +318,7 @@ pub struct PermissionOverwrite {
 
 
 #[derive(Clone, Copy, Debug, Serialize, Eq, Hash, PartialEq, Deserialize)]
-#[serde(from = "u8", into = "u8", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum PermissionOverwriteType {
     Member,
     Role,
