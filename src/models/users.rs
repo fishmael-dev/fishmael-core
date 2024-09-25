@@ -7,14 +7,14 @@ use super::{
     util::impl_serde_for_flags,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct AvatarDecorationData {
     pub asset: String,
     pub sku_id: u64,
 }
 
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct User {
     pub accent_color: Option<u32>,
     pub avatar: Option<String>,

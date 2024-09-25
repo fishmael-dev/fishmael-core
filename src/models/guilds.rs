@@ -2,6 +2,7 @@ use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
 use super::{
+    member::Member,
     snowflake::{ChannelMarker, GuildMarker, Id, UserMarker},
     util::impl_serde_for_flags,
 };
@@ -48,8 +49,8 @@ pub struct Guild {
     max_video_channel_users: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub member_count: Option<u64>,
-    // #[serde(default)]
-    // pub members: Vec<Member>,
+    #[serde(default)]
+    pub members: Vec<Member>,
     pub mfa_level: u8,  // TODO: mfalevel struct
     pub name: String,
     pub nsfw_level: u8,  // TODO: nsfwlevel struct
