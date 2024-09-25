@@ -152,7 +152,7 @@ bitflags! {
 bitflags! {
     #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     pub struct SystemChannelFlags: u64 {
-        const SUPPRESS_JOIN_NOTIFICATIONS = 1;        /// Suppress server boost notifications.
+        const SUPPRESS_JOIN_NOTIFICATIONS = 1;
         const SUPPRESS_PREMIUM_SUBSCRIPTIONS = 1 << 1;
         const SUPPRESS_GUILD_REMINDER_NOTIFICATIONS = 1 << 2;
         const SUPPRESS_JOIN_NOTIFICATION_REPLIES = 1 << 3;
