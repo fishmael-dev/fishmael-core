@@ -1,17 +1,17 @@
 use serde::{Deserialize, Serialize};
 
-use crate::models::snowflake::Id;
+use super::snowflake::{Id, GuildMarker, UserMarker};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UnavailableGuild {
-    pub id: Id,
+    pub id: Id<GuildMarker>,
     pub unavailable: bool,
 }
 
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Guild {
-    id: Id,
+    id: Id<GuildMarker>,
     name: String,
     icon: Option<String>,
     // TODO?: icon_hash???
@@ -19,7 +19,7 @@ pub struct Guild {
     discovery_splash: Option<String>,
     #[serde(default)]
     owner: bool,
-    owner_id: Id,
+    owner_id: Id<UserMarker>,
     // #[serde(default, deserialize_with="deserialize_number_from_string")]
     // permissions: u64,  // String in API docs.
     // #[serde(deserialize_with="deserialize_number_from_string")]

@@ -2,45 +2,70 @@ use serde::{
     de::{Deserialize, Error as DeError, Unexpected, Visitor},
     ser::Serialize,
 };
-use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
+use std::{
+    fmt::{Debug, Display, Formatter, Result as FmtResult},
+    marker::PhantomData,
+};
 
 
 #[derive(Debug)]
-pub struct Id(u64);
+pub struct UserMarker;
 
 
-impl Id {
+#[derive(Debug)]
+pub struct GuildMarker;
+
+
+#[derive(Debug)]
+pub struct Id<T> {
+    phantom: PhantomData<T>,
+    value: u64,
+}
+
+
+impl<T> Id<T> {
+    pub fn new(value: u64) -> Self {
+        Self {
+            phantom: PhantomData,
+            value,
+        }
+    }
+
     pub fn timestamp(&self) -> u64 {
         const DISCORD_EPOCH: u64 = 1_420_070_400_000;
 
-        (&self.0 >> 22) + DISCORD_EPOCH
+        (self.value >> 22) + DISCORD_EPOCH
     }
 }
 
 
-impl Display for Id {
+impl<T> Display for Id<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        Display::fmt(&self.0, f)
+        Display::fmt(&self.value, f)
     }
 }
 
 
-impl<'de> Deserialize<'de> for Id {
+impl<'de, T> Deserialize<'de> for Id<T> {
     
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
     D: serde::Deserializer<'de> 
     {
-        struct IdVisitor {}
+        struct IdVisitor<T> {
+            phantom: PhantomData<T>,
+        }
     
-        impl IdVisitor {
+        impl<T> IdVisitor<T> {
             const fn new() -> Self {
-                Self {}
+                Self {
+                    phantom: PhantomData
+                }
             }
         }
 
-        impl<'de> Visitor<'de> for IdVisitor {
-            type Value = Id;
+        impl<'de, T> Visitor<'de> for IdVisitor<T> {
+            type Value = Id<T>;
 
             fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
                 formatter.write_str("a discord id")
@@ -49,8 +74,8 @@ impl<'de> Deserialize<'de> for Id {
             fn visit_str<E: DeError>(self, value: &str) -> Result<Self::Value, E> {
                 println!("WHOA");
                 Ok(
-                    Id (
-                        value.parse()
+                    Id::new(
+                        value.parse::<u64>()
                             .map_err(|_| E::invalid_value(Unexpected::Str(value), &"a u64 string"))?
                     )
                 )
@@ -62,7 +87,7 @@ impl<'de> Deserialize<'de> for Id {
 }
 
 
-impl Serialize for Id {
+impl<T> Serialize for Id<T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_newtype_struct("Id", &self.to_string())
     }
