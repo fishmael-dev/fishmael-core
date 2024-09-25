@@ -193,8 +193,10 @@ impl Client {
                         // TODO: Store resume url, implement resuming.
                         self.session_id = Some(session_id);
                         self.resume_gateway_url = Some(resume_gateway_url);
+
+                        let id = &guilds.iter().next().unwrap().id;
                         println!("Ready! We are user {:?} ({})", user.username, user.discriminator);
-                        println!("Found guild with id {}", guilds.iter().next().unwrap().id)
+                        println!("Found guild with id {} (created at {})", &id, &id.timestamp())
                     },
                     (ACK, None) => {
                         println!("Heartbeat ACK received.");
