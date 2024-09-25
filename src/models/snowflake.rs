@@ -4,6 +4,7 @@ use serde::{
 };
 use std::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
+    hash::{Hash, Hasher},
     marker::PhantomData,
 };
 
@@ -16,6 +17,9 @@ pub struct GuildMarker;
 
 #[derive(Debug)]
 pub struct ChannelMarker;
+
+#[derive(Debug)]
+pub struct RoleMarker;
 
 
 #[derive(Debug)]
@@ -39,6 +43,48 @@ impl<T> Id<T> {
         (self.value >> 22) + DISCORD_EPOCH
     }
 }
+
+
+impl<T> Clone for Id<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+
+impl<T> Copy for Id<T> {}
+
+
+impl<T> Hash for Id<T> {
+    fn hash<U: Hasher>(&self, state: &mut U) {
+        state.write_u64(self.value)
+    }
+}
+
+
+impl<T> Eq for Id<T> {}
+
+
+impl<T> PartialEq<Id<T>> for Id<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+
+impl<T> PartialEq<Id<T>> for u64 {
+    fn eq(&self, other: &Id<T>) -> bool {
+        *self == other.value
+    }
+}
+
+
+impl<T> PartialEq<u64> for Id<T> {
+    fn eq(&self, other: &u64) -> bool {
+        self.value == *other
+    }
+}
+
 
 
 impl<T> Display for Id<T> {
