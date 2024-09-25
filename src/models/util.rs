@@ -26,10 +26,6 @@ macro_rules! impl_serde_for_flags {
                         fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
                             Ok(<$t>::from_bits_truncate(value))
                         }
-
-                        fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
-                            self.visit_u64(value as u64)
-                        }
                     }
 
                     deserializer.deserialize_any(FlagVisitor)
