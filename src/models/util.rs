@@ -32,7 +32,7 @@ macro_rules! impl_serde_for_flags {
                 }
             }
             
-            impl Serialize for $t {
+            impl serde::ser::Serialize for $t {
                 fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                 where
                     S: serde::ser::Serializer,

@@ -8,14 +8,14 @@ use super::{
     util::impl_serde_for_flags,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct UnavailableGuild {
     pub id: Id<GuildMarker>,
     pub unavailable: bool,
 }
 
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Guild {
     pub afk_channel_id: Option<u64>,
     pub afk_timeout: u32,

@@ -2,6 +2,8 @@ use futures::{
     stream::{SplitSink, StreamExt},
     SinkExt,
 };
+use identify::{Identify, IdentifyProperties, ShardId};
+use models::intents::Intents;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::{env, sync::Arc, time::Duration};
 use tokio::{net::TcpStream, sync::Mutex, task::JoinHandle, time};
@@ -32,7 +34,7 @@ pub struct Client {
     pub api_url: String,
     pub gateway_url: String,
     pub token: String,
-    pub intents: u64,
+    pub intents: Intents,
     heartbeat: Arc<Mutex<Option<JoinHandle<()>>>>,
     heartbeat_interval: Option<u64>,
     rng: Arc<Mutex<StdRng>>,
@@ -48,7 +50,7 @@ impl Client {
         api_url: String,
         gateway_url: String,
         token: String,
-        intents: u64,
+        intents: Intents,
     ) -> Self {
         Client {
             api_url,
@@ -74,10 +76,10 @@ impl Client {
             match serde_json::from_str(&msg) {
                 Ok(GatewayEvent {
                     op: HELLO,
-                    d: Some(Payload::Hello { heartbeat_interval }),
+                    d: Some(Payload::Hello(hello)),
                     ..
                 }) => {
-                    self.heartbeat_interval = Some(heartbeat_interval);
+                    self.heartbeat_interval = Some(hello.heartbeat_interval);
                     self.start_heartbeat(Arc::clone(&tx), true).await?;
                 },
                 _ => bail!("Did not receive Hello event!"),
@@ -91,15 +93,18 @@ impl Client {
             Arc::clone(&tx),
             GatewayEvent::new(
                 IDENTIFY,
-                Payload::Identify {
-                    token: self.token.clone(),
+                Payload::Identify(Identify {
+                    compress: false,
+                    intents: self.intents.clone(),
+                    large_threshold: 250,
                     properties: IdentifyProperties {
-                        os: env::consts::OS.to_string(),
                         browser: "fishmael".to_string(),
                         device: "fishmael".to_string(),
+                        os: env::consts::OS.to_string(),
                     },
-                    intents: self.intents.clone(),
-                }
+                    shard: Some(ShardId::new(0, 1)),
+                    token: self.token.clone(),
+                })
             ),
         ).await?;
 
@@ -189,13 +194,13 @@ impl Client {
                 }
 
                 match (op, d) {
-                    (DISPATCH, Some(Payload::Ready { v, user, session_id, resume_gateway_url, guilds, shard })) => {
+                    (DISPATCH, Some(Payload::Ready(ready))) => {
                         // TODO: Store resume url, implement resuming.
-                        self.session_id = Some(session_id);
-                        self.resume_gateway_url = Some(resume_gateway_url);
+                        self.session_id = Some(ready.session_id);
+                        self.resume_gateway_url = Some(ready.resume_gateway_url);
 
-                        let id = &guilds.iter().next().unwrap().id;
-                        println!("Ready! We are user {:?} ({})", user.name, user.discriminator);
+                        let id = &ready.guilds.iter().next().unwrap().id;
+                        println!("Ready! We are user {:?} ({})", ready.user.name, ready.user.discriminator);
                         println!("Found guild with id {} (created at {})", &id, &id.timestamp())
                     },
                     (ACK, None) => {
