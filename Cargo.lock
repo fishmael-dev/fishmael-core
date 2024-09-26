@@ -276,6 +276,9 @@ dependencies = [
 [[package]]
 name = "fishmael-cache"
 version = "0.1.0"
+dependencies = [
+ "redis",
+]
 
 [[package]]
 name = "fishmael-gateway"
@@ -967,6 +970,7 @@ dependencies = [
  "anyhow",
  "bitflags",
  "dotenv",
+ "fishmael-cache",
  "fishmael-gateway",
  "fishmael-model",
  "redis",

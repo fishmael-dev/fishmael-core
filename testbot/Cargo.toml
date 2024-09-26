@@ -7,13 +7,14 @@ edition.workspace = true
 
 [dependencies]
 anyhow = "1.0.88"
+bitflags = { version = "2.6.0", features = ["serde"], default-features = false }
 dotenv = "0.15.0"
 redis = { version = "0.27.0", features = ["tokio-comp"] }
 tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "sync"] }
 tokio-macros = "2.4.0"
 tokio-tungstenite = { version = "0.23.1", features = ["rustls-tls-webpki-roots"] }
 tokio-rustls = { version = "^0.26.0" }
-bitflags = { version = "2.6.0", features = ["serde"], default-features = false }
 
+fishmael-cache = { version = "0.1.0", path = "../fishmael-cache"}
 fishmael-model = { version = "0.1.0", path = "../fishmael-model"}
 fishmael-gateway = { version = "0.1.0", path = "../fishmael-gateway"}
