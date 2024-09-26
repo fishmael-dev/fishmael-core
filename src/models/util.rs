@@ -18,7 +18,7 @@ macro_rules! impl_serde_for_flags {
                                 value.parse()
                                     .map_err(|_| E::invalid_value(
                                         serde::de::Unexpected::Str(value),
-                                        &"a u8 string"
+                                        &"a u64 string"
                                     ))?
                             )
                         }
