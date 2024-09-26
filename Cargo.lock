@@ -274,6 +274,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "fishmael-cache"
+version = "0.1.0"
+
+[[package]]
 name = "fishmael-gateway"
 version = "0.1.0"
 dependencies = [
