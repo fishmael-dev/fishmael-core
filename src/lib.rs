@@ -1,3 +1,4 @@
+use anyhow::{bail, Context, Result};
 use futures::{
     stream::{SplitSink, StreamExt},
     SinkExt,
@@ -8,26 +9,9 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::{env, sync::Arc, time::Duration};
 use tokio::{net::TcpStream, sync::Mutex, task::JoinHandle, time};
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
-use anyhow::{bail, Context, Result};
 
-// use crate::models::events::*;
 pub mod models;
 use crate::models::event::*;
-
-// Opcodes
-const DISPATCH: u8 = 0;
-const HEARTBEAT: u8 = 1;
-const IDENTIFY: u8 = 2;
-const PRESENCE: u8 = 3;
-const VOICE_STATE: u8 = 4;
-const VOICE_PING: u8 = 5;
-const RESUME: u8 = 6;
-const RECONNECT: u8 = 7;
-const REQUEST_MEMBERS: u8 = 8;
-const INVALIDATE_SESSION: u8 = 9;
-const HELLO: u8 = 10;
-const ACK: u8 = 11;
-const GUILD_SYNC: u8 = 12;
 
 
 pub struct Client {
@@ -75,7 +59,7 @@ impl Client {
         if let Some(Ok(Message::Text(msg))) = rx.next().await {
             match serde_json::from_str(&msg) {
                 Ok(GatewayEvent {
-                    op: HELLO,
+                    op: Opcode::Hello,
                     d: Some(Payload::Hello(hello)),
                     ..
                 }) => {
@@ -92,7 +76,7 @@ impl Client {
         Client::send_gateway_event(
             Arc::clone(&tx),
             GatewayEvent::new(
-                IDENTIFY,
+                Opcode::Identify,
                 Payload::Identify(Identify {
                     compress: false,
                     intents: self.intents.clone(),
@@ -149,7 +133,7 @@ impl Client {
                 loop {
                     match Client::send_gateway_event(
                         Arc::clone(&tx),
-                        GatewayEvent::new(HEARTBEAT, Payload::OptInt(*loop_seq.lock().await)),
+                        GatewayEvent::new(Opcode::Heartbeat, Payload::OptInt(*loop_seq.lock().await)),
                     ).await {
                         Ok(_) => time::sleep(Duration::from_millis(heartbeat_interval)).await,
                         Err(_) => break,  // TODO: log this
@@ -188,13 +172,13 @@ impl Client {
         println!("RECEIVED: {}", payload);
 
         match serde_json::from_str(&payload) {
-            Ok(GatewayEvent {op, d, t, s}) => {
+            Ok(GatewayEvent {op, d, t: _, s}) => {
                 if let Some(s) = s {
                     *self.seq.lock().await = Some(s);
                 }
 
                 match (op, d) {
-                    (DISPATCH, Some(Payload::Ready(ready))) => {
+                    (Opcode::Dispatch, Some(Payload::Ready(ready))) => {
                         // TODO: Store resume url, implement resuming.
                         self.session_id = Some(ready.session_id);
                         self.resume_gateway_url = Some(ready.resume_gateway_url);
@@ -203,10 +187,10 @@ impl Client {
                         println!("Ready! We are user {:?} ({})", ready.user.name, ready.user.discriminator);
                         println!("Found guild with id {} (created at {})", &id, &id.timestamp())
                     },
-                    (ACK, None) => {
+                    (Opcode::ACK, None) => {
                         println!("Heartbeat ACK received.");
                     },
-                    (HEARTBEAT, _) => {
+                    (Opcode::Heartbeat, _) => {
                         // Immediately restart heartbeat...
                         self.start_heartbeat(tx, false).await?;
                     }
