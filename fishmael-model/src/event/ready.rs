@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::models::{guild::UnavailableGuild, user::User};
+use crate::{guild::UnavailableGuild, user::User};
 
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

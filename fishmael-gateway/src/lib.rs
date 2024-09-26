@@ -3,15 +3,20 @@ use futures::{
     stream::{SplitSink, StreamExt},
     SinkExt,
 };
-use identify::{Identify, IdentifyProperties, ShardId};
-use models::intents::Intents;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::{env, sync::Arc, time::Duration};
 use tokio::{net::TcpStream, sync::Mutex, task::JoinHandle, time};
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
-pub mod models;
-use crate::models::event::*;
+use fishmael_model::{
+    event::{
+        identify::{Identify, IdentifyProperties, ShardId},
+        GatewayEvent,
+        Opcode,
+        Payload,
+    },
+    intents::Intents,
+};
 
 
 pub struct Client {

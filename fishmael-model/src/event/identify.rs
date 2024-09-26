@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::models::intents::Intents;
+use crate::intents::Intents;
 
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
