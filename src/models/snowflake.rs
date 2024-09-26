@@ -33,6 +33,12 @@ pub struct ApplicationMarker;
 #[derive(Debug)]
 pub struct EmojiMarker;
 
+#[derive(Debug)]
+pub struct IntegrationMarker;
+
+#[derive(Debug)]
+pub struct SkuMarker;
+
 
 #[derive(Debug)]
 pub struct Id<T> {

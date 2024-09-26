@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     channel::Channel,
     member::Member,
+    role::Role,
     snowflake::{ChannelMarker, GuildMarker, Id, UserMarker},
     util::impl_serde_for_flags,
 };
@@ -69,7 +70,7 @@ pub struct Guild {
     // #[serde(default)]
     // pub presences: Vec<Presence>,
     pub public_updates_channel_id: Option<Id<ChannelMarker>>,
-    // pub roles: Vec<Role>,
+    pub roles: Vec<Role>,
     pub rules_channel_id: Option<Id<ChannelMarker>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub safety_alerts_channel_id: Option<Id<ChannelMarker>>,
