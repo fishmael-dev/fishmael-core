@@ -7,5 +7,3 @@ pub mod role;
 pub mod snowflake;
 pub mod user;
 pub mod util;
-
-mod visitor;
