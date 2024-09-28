@@ -2,7 +2,7 @@ use tokio;
 use anyhow::{Context, Result};
 use dotenv::dotenv;
 use fishmael_model::{event::{guild_create::GuildCreate, identify::ShardId}, intents::Intents};
-use fishmael_gateway::{Event, Shard};
+use fishmael_gateway::{event::Event, Shard};
 
 #[tokio::main]
 async fn main() -> Result<()> {

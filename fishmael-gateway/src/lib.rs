@@ -1,14 +1,12 @@
 use anyhow::{Context, Result};
+use error::ReceiveErrorKind;
+use event::MinimalEvent;
 use futures::Sink;
 use futures_core::Stream;
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use serde::Deserialize;
-use serde_json::Value;
 use std::{
     borrow::Cow,
     env,
-    fmt::{Display, Formatter, Result as FmtResult},
-    fs,
     future::Future,
     mem,
     pin::Pin,
@@ -31,7 +29,6 @@ use tokio_tungstenite::{
 
 use fishmael_model::{
     event::{
-        guild_create::GuildCreate,
         hello::Hello,
         identify::{Identify, IdentifyProperties, ShardId},
         ready::Ready,
@@ -40,6 +37,15 @@ use fishmael_model::{
         Payload,
     },
     intents::Intents,
+};
+
+pub mod error;
+pub mod event;
+pub mod poll_event;
+
+use crate::{
+    error::ReceiveError,
+    poll_event::PollEvent,
 };
 
 
@@ -56,51 +62,6 @@ struct ConnectionFuture(Pin<Box<dyn Future<Output = Result<Connection, Websocket
 pub struct Session {
     id: Box<str>,
     sequence: u64,
-}
-
-
-#[derive(Deserialize)]
-pub struct Thing {
-    op: Opcode,
-    d: Value,
-    s: Option<u64>,
-    t: Option<String>,
-}
-
-
-#[derive(Debug)]
-pub enum Event {
-    Heartbeat(Option<u64>),
-    Hello(Hello),
-    GatewayClose(Option<CloseFrame<'static>>),
-    GuildCreate(GuildCreate),
-    Identify(Identify),
-    Ready(Ready),
-}
-
-impl Event {
-    pub fn name(&self) -> &str {
-        match self {
-            Self::Heartbeat(_) => "Heartbeat",
-            Self::Hello(_) => "Hello",
-            Self::GatewayClose(_) => "GatewayClose",
-            Self::GuildCreate(_) => "GuildCreate",
-            Self::Identify(_) => "Identify",
-            Self::Ready(_) => "Ready",
-        }
-    }
-}
-
-impl From<Payload> for Event {
-    fn from(value: Payload) -> Self {
-        match value {
-            Payload::Heartbeat(v) => Self::Heartbeat(v),
-            Payload::Hello(v) => Self::Hello(v),
-            Payload::GuildCreate(v) => Self::GuildCreate(v),
-            Payload::Identify(v) => Self::Identify(v),
-            Payload::Ready(v) => Self::Ready(v), 
-        }
-    }
 }
 
 
@@ -164,7 +125,7 @@ impl Shard {
     }
 
     fn process(&mut self, event: &str) -> Result<()> {
-        let Thing{op, d: event_data, s: maybe_sequence, t: maybe_type} =
+        let MinimalEvent{op, d: event_data, s: maybe_sequence, t: maybe_type} =
             serde_json::from_str(&event)
             .context("failed to extract data from event")?;
 
@@ -276,7 +237,7 @@ impl Shard {
     }
 
     pub fn next_event(&mut self) -> PollEvent<Self> {
-        PollEvent {stream: self}
+        PollEvent::new(self)
     }
 
 }
@@ -432,93 +393,5 @@ impl Stream for Shard {
         }
 
         Poll::Ready(Some(Ok(message)))
-    }
-}
-
-
-#[derive(Debug)]
-pub enum ReceiveErrorKind {
-    Deserializing{
-        event: String,
-    },
-    Reconnect,
-}
-
-
-#[derive(Debug)]
-pub struct ReceiveError {
-    pub(crate) kind: ReceiveErrorKind,
-    pub(crate) source: Option<Box<dyn std::error::Error + Send + Sync>>,
-}
-
-
-impl Display for ReceiveError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match &self.kind {
-            ReceiveErrorKind::Deserializing { event } => {
-                f.write_str("failed to deserialize event: ")?;
-                f.write_str(event)
-            },
-            ReceiveErrorKind::Reconnect => f.write_str("failed to reconnect")
-        }
-    }
-}
-
-impl std::error::Error for ReceiveError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source
-            .as_ref()
-            .map(|source| &**source as &(dyn std::error::Error + 'static))
-    }
-}
-
-
-pub struct PollEvent<'a, St: ?Sized> {
-    stream: &'a mut St,
-}
-
-
-impl<'a, St: ?Sized + Stream<Item = Result<Message, ReceiveError>> + Unpin> Future for PollEvent<'a, St> {
-    type Output = Option<Result<Event, ReceiveError>>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut AsyncContext<'_>) -> Poll<Self::Output> {
-        let try_from_message = |message| match message {
-            Message::Text(json) => {
-                match serde_json::from_str::<GatewayEvent>(&json) {
-                    Ok(GatewayEvent{d: Some(event_data), ..}) => Ok(Some(Into::<Event>::into(event_data))),
-                    Ok(GatewayEvent{d: None, ..}) => Ok(None),
-                    Err(e) => Err(ReceiveError{
-                        kind: ReceiveErrorKind::Deserializing { event: json },
-                        source: Some(Box::new(e))
-                    }),
-                }
-            },
-            Message::Close(frame) => Ok(Some(Event::GatewayClose(frame))),
-            v => unreachable!("unhandled message in deserializing: {:?}", v),
-        };
-        
-        loop {
-            match ready!(Pin::new(&mut self.stream).poll_next(cx)) {
-                Some(item) => {
-                    match item.and_then(try_from_message) {
-                        Ok(event) => {
-                            return Poll::Ready(Ok(event).transpose());
-                        },
-                        Err(ReceiveError{kind: ReceiveErrorKind::Deserializing{event}, source: Some(source)}) => {
-                            println!("failed to deserialise event: {}...\n\twith reason: {}", &event[..100], source);
-
-                            fs::write("failed.json", event).unwrap();
-                            panic!("wee");
-                        },
-                        Err(err) => {
-                            println!("failed to deserialise event with reason: {}", err)
-                        }
-                    }
-                }
-                None => {
-                    return Poll::Ready(None)
-                },
-            }
-        }
     }
 }
