@@ -8,7 +8,6 @@ use fishmael_gateway::{event::Event, Shard};
 async fn main() -> Result<()> {
     dotenv().context("Failed to find dotenv")?;
     let token = std::env::var("TOKEN").context("Failed to load token from .env")?;
-
     let mut shard = Shard::new(
         token,
         ShardId::new(0, 1),
