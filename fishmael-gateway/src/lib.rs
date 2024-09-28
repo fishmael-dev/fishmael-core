@@ -8,6 +8,7 @@ use std::{
     borrow::Cow,
     env,
     fmt::{Display, Formatter, Result as FmtResult},
+    fs,
     future::Future,
     mem,
     pin::Pin,
@@ -77,6 +78,18 @@ pub enum Event {
     Ready(Ready),
 }
 
+impl Event {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Heartbeat(_) => "Heartbeat",
+            Self::Hello(_) => "Hello",
+            Self::GatewayClose(_) => "GatewayClose",
+            Self::GuildCreate(_) => "GuildCreate",
+            Self::Identify(_) => "Identify",
+            Self::Ready(_) => "Ready",
+        }
+    }
+}
 
 impl From<Payload> for Event {
     fn from(value: Payload) -> Self {
@@ -425,7 +438,7 @@ impl Stream for Shard {
 
 #[derive(Debug)]
 pub enum ReceiveErrorKind {
-    Deseralizing{
+    Deserializing{
         event: String,
     },
     Reconnect,
@@ -442,7 +455,7 @@ pub struct ReceiveError {
 impl Display for ReceiveError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match &self.kind {
-            ReceiveErrorKind::Deseralizing { event } => {
+            ReceiveErrorKind::Deserializing { event } => {
                 f.write_str("failed to deserialize event: ")?;
                 f.write_str(event)
             },
@@ -471,26 +484,40 @@ impl<'a, St: ?Sized + Stream<Item = Result<Message, ReceiveError>> + Unpin> Futu
     fn poll(mut self: Pin<&mut Self>, cx: &mut AsyncContext<'_>) -> Poll<Self::Output> {
         let try_from_message = |message| match message {
             Message::Text(json) => {
-                match serde_json::from_str::<Payload>(&json) {
-                    Ok(payload) => Ok(Into::<Event>::into(payload)),
+                match serde_json::from_str::<GatewayEvent>(&json) {
+                    Ok(GatewayEvent{d: Some(event_data), ..}) => Ok(Some(Into::<Event>::into(event_data))),
+                    Ok(GatewayEvent{d: None, ..}) => Ok(None),
                     Err(e) => Err(ReceiveError{
-                        kind: ReceiveErrorKind::Deseralizing { event: json },
+                        kind: ReceiveErrorKind::Deserializing { event: json },
                         source: Some(Box::new(e))
                     }),
                 }
             },
-            Message::Close(frame) => Ok(Event::GatewayClose(frame)),
+            Message::Close(frame) => Ok(Some(Event::GatewayClose(frame))),
             v => unreachable!("unhandled message in deserializing: {:?}", v),
         };
         
         loop {
             match ready!(Pin::new(&mut self.stream).poll_next(cx)) {
                 Some(item) => {
-                    if let Ok(event) = item.and_then(try_from_message) {
-                        return Poll::Ready(Some(Ok(event)));
+                    match item.and_then(try_from_message) {
+                        Ok(event) => {
+                            return Poll::Ready(Ok(event).transpose());
+                        },
+                        Err(ReceiveError{kind: ReceiveErrorKind::Deserializing{event}, source: Some(source)}) => {
+                            println!("failed to deserialise event: {}...\n\twith reason: {}", &event[..100], source);
+
+                            fs::write("failed.json", event).unwrap();
+                            panic!("wee");
+                        },
+                        Err(err) => {
+                            println!("failed to deserialise event with reason: {}", err)
+                        }
                     }
                 }
-                None => return Poll::Ready(None),
+                None => {
+                    return Poll::Ready(None)
+                },
             }
         }
     }
