@@ -50,6 +50,6 @@ pub struct RoleTags {
     pub integration_id: Option<Id<IntegrationMarker>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subscription_listing_id: Option<Id<SkuMarker>>,
-    #[serde(default)]
+    #[serde(default, with = "crate::visitor::null_bool")]
     pub premium_subscriber: bool,
 }
