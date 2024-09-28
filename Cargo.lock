@@ -287,6 +287,7 @@ dependencies = [
  "anyhow",
  "fishmael-model",
  "futures",
+ "futures-core",
  "rand",
  "serde",
  "serde_json",

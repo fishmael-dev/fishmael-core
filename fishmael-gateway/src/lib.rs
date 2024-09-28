@@ -1,27 +1,55 @@
-use anyhow::{bail, Context, Result};
-use futures::{
-    stream::{SplitSink, StreamExt},
-    SinkExt,
-};
+use anyhow::{Context, Result};
+use futures::Sink;
+use futures_core::Stream;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::Deserialize;
 use serde_json::Value;
-use std::{borrow::Borrow, env, mem, sync::Arc, time::Duration};
-use tokio::{net::TcpStream, sync::Mutex, task::JoinHandle, time::{self, Instant, Interval, MissedTickBehavior}};
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use std::{
+    borrow::Cow,
+    env,
+    fmt::{Display, Formatter, Result as FmtResult},
+    future::Future,
+    mem,
+    pin::Pin,
+    task::{ready, Context as AsyncContext, Poll},
+    time::Duration,
+};
+use tokio::{
+    net::TcpStream,
+    time::{self, Instant, Interval, MissedTickBehavior}
+};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{
+        protocol::{frame::coding::CloseCode, CloseFrame},
+        Error as WebsocketError, Message,
+    },
+    MaybeTlsStream,
+    WebSocketStream,
+};
 
 use fishmael_model::{
     event::{
-        hello::Hello, identify::{Identify, IdentifyProperties, ShardId}, ready::Ready, GatewayEvent, Opcode, Payload
+        guild_create::GuildCreate,
+        hello::Hello,
+        identify::{Identify, IdentifyProperties, ShardId},
+        ready::Ready,
+        GatewayEvent,
+        Opcode,
+        Payload,
     },
     intents::Intents,
 };
 
 
 const GATEWAY_URL: &str = "wss://gateway.discord.gg";
+const API_VERSION: u8 = 10;
 
 
 type Connection = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+
+struct ConnectionFuture(Pin<Box<dyn Future<Output = Result<Connection, WebsocketError>> + Send>>);
 
 
 pub struct Session {
@@ -36,6 +64,30 @@ pub struct Thing {
     d: Value,
     s: Option<u64>,
     t: Option<String>,
+}
+
+
+#[derive(Debug)]
+pub enum Event {
+    Heartbeat(Option<u64>),
+    Hello(Hello),
+    GatewayClose(Option<CloseFrame<'static>>),
+    GuildCreate(GuildCreate),
+    Identify(Identify),
+    Ready(Ready),
+}
+
+
+impl From<Payload> for Event {
+    fn from(value: Payload) -> Self {
+        match value {
+            Payload::Heartbeat(v) => Self::Heartbeat(v),
+            Payload::Hello(v) => Self::Hello(v),
+            Payload::GuildCreate(v) => Self::GuildCreate(v),
+            Payload::Identify(v) => Self::Identify(v),
+            Payload::Ready(v) => Self::Ready(v), 
+        }
+    }
 }
 
 
@@ -62,15 +114,17 @@ impl Session {
 
 
 pub struct Shard {
-    pub token: String,
-    pub intents: Intents,
-    heartbeat: Arc<Mutex<Option<JoinHandle<()>>>>,
+    connection: Option<Connection>,
+    connection_future: Option<ConnectionFuture>,
     heartbeat_interval: Option<Interval>,
+    identified: bool,
+    intents: Intents,
+    pending: Option<Message>,
+    resume_gateway_url: Option<String>,
     rng: StdRng,
-    seq: Arc<Mutex<Option<u64>>>,
     session: Option<Session>,
     shard_id: ShardId,
-    resume_gateway_url: Option<String>,
+    token: String,
 }
 
 
@@ -82,180 +136,18 @@ impl Shard {
         intents: Intents,
     ) -> Self {
         Self {
-            heartbeat: Arc::new(Mutex::new(None)),
+            connection: None,
+            connection_future: None,
             heartbeat_interval: None,
+            identified: false,
             intents,
+            pending: None,
             resume_gateway_url: None,
             rng: StdRng::from_entropy(),
             session: None,
-            seq: Arc::new(Mutex::new(None)),
             shard_id,
             token,
         }
-    }
-
-    pub async fn connect(&mut self) -> Result<()>{
-        let (ws, _) = connect_async(GATEWAY_URL).await?;
-        let (tx, mut rx) = ws.split();
-        let tx = Arc::new(Mutex::new(tx));
-
-        // Wait for Hello and start heartbeat...
-        // if let Some(Ok(Message::Text(msg))) = rx.next().await {
-        //     match serde_json::from_str(&msg) {
-        //         Ok(GatewayEvent {
-        //             op: Opcode::Hello,
-        //             d: Some(Payload::Hello(hello)),
-        //             ..
-        //         }) => {
-        //             self.heartbeat_interval = Some(hello.heartbeat_interval);
-        //             // self.start_heartbeat(Arc::clone(&tx), true).await?;
-        //         },
-        //         _ => bail!("Did not receive Hello event!"),
-        //     }
-        // } else {
-        //     bail!("Did not receive Hello event!");
-        // }
-
-        // Send Identify...
-        Self::send_gateway_event(
-            Arc::clone(&tx),
-            GatewayEvent::new(
-                Opcode::Identify,
-                Payload::Identify(Identify {
-                    compress: false,
-                    intents: self.intents.clone(),
-                    large_threshold: 250,
-                    properties: IdentifyProperties {
-                        browser: "fishmael".to_string(),
-                        device: "fishmael".to_string(),
-                        os: env::consts::OS.to_string(),
-                    },
-                    shard: Some(self.shard_id),
-                    token: self.token.as_mut().to_string(),
-                })
-            ),
-        ).await?;
-
-        // Listen for incoming events...
-        while let Some(msg) = rx.next().await {
-            match msg {
-                Ok(Message::Text(msg)) => {
-                    self.process_gateway_event(Arc::clone(&tx), msg).await?;
-                },
-                _ => println!("Failed to decode websocket message: {:?}", msg),
-            };
-        };
-
-        Ok(())
-    }
-
-    // async fn start_heartbeat(
-    //     &mut self,
-    //     tx: Arc<Mutex<SplitSink<Connection, Message>>>,
-    //     wait: bool,
-    // ) -> Result<()> {
-    //     let mut heartbeat = self.heartbeat.lock().await;
-    //     if heartbeat.is_some() {
-    //         heartbeat.as_mut().unwrap().abort();
-    //     }
-
-    //     if let Some(heartbeat_interval) = self.heartbeat_interval {
-    //         let initial_delay = self.rng.lock().await.gen_range(0..heartbeat_interval);
-    
-    //         println!("Staring heartbeat with interval {} [ms].", heartbeat_interval);
-
-    //         // All of this runs in the background.
-    //         *heartbeat = Some(tokio::spawn(async move {
-    //             if wait {
-    //                 // Sleep a random time from 0..heartbeat_interval for the first
-    //                 // heartbeat.
-    //                 println!("Waiting {} [ms] until initial heartbeat.", initial_delay);
-    //                 time::sleep(Duration::from_millis(initial_delay)).await;
-    //             }
-   
-    //             loop {
-    //                 let sequence = self.session.as_mut()
-    //                     .unwrap()
-    //                     .sequence()
-    //                     .clone()
-    //                     .to_owned();
-
-    //                 match Self::send_gateway_event(
-    //                     Arc::clone(&tx),
-    //                     GatewayEvent::new(Opcode::Heartbeat, Payload::OptInt(Some(sequence))),
-    //                 ).await {
-    //                     Ok(_) => time::sleep(Duration::from_millis(heartbeat_interval)).await,
-    //                     Err(_) => break,  // TODO: log this
-    //                 };
-    //             }
-    //         }));
-    //     } else {
-    //         bail!("Heartbeat interval was not set before starting heartbeat!");
-    //     }
-
-    //     Ok(())
-    // }
-
-    async fn send_gateway_event(
-        tx: Arc<Mutex<SplitSink<Connection, Message>>>,
-        event: GatewayEvent,
-    ) -> Result<()> {
-        let json = serde_json::json!(event).to_string();
-        println!("{}", json);
-        tx.lock()
-            .await
-            .send(Message::Text(json))
-            .await
-            // We won't have access to event.t for events with a nonzero opcode,
-            // So we'll have to make-do with the enum/opcode.
-            .context(format!("Failed to send {:?} event", event.op))?;
-
-        Ok(())
-    }
-
-    async fn process_gateway_event(
-        &mut self,
-        tx: Arc<Mutex<SplitSink<Connection, Message>>>,
-        payload: String,
-    ) -> Result<()> {
-        println!("RECEIVED: {}", payload);
-
-        match serde_json::from_str(&payload) {
-            Ok(GatewayEvent {op, d, t: _, s}) => {
-                if let Some(s) = s {
-                    if let Some(ref mut session) = &mut self.session {
-                        session.set_sequence(s);
-                    };
-                }
-
-                match (op, d) {
-                    (Opcode::Dispatch, Some(Payload::Ready(ready))) => {
-                        println!("Ready received.");
-                        // TODO: Store resume url, implement resuming.
-                        let sequence = s.context("missing sequence in ready")?;
-
-                        self.session = Some(Session::new(sequence, ready.session_id));
-                        self.resume_gateway_url = Some(ready.resume_gateway_url);
-
-                        let id = &ready.guilds.iter().next().unwrap().id;
-                        println!("Ready! We are user {:?} ({})", ready.user.name, ready.user.discriminator);
-                        println!("Found guild with id {} (created at {})", &id, &id.timestamp())
-                    },
-                    (Opcode::ACK, None) => {
-                        println!("Heartbeat ACK received.");
-                    },
-                    (Opcode::Heartbeat, _) => {
-                        println!("Heartbeat received.");
-                        // Immediately restart heartbeat...
-                        // self.start_heartbeat(tx, false).await?;
-                    }
-                    _ => println!("Unknown event: {}", payload),
-                }
-            },
-            Err(err) => println!("Failed to deserialise: {:?}", err)
-        }
-
-        Ok(())
     }
 
     fn process(&mut self, event: &str) -> Result<()> {
@@ -311,5 +203,295 @@ impl Shard {
         }
 
         Ok(())
+    }
+
+    fn disconnect(&mut self) {
+        self.heartbeat_interval = None;
+        self.pending = Some(Message::Close(Some(CloseFrame {
+            code: CloseCode::Normal,
+            reason: Cow::Owned("Cya".to_string())
+        })));
+    }
+
+    fn poll_handle_pending(&mut self, cx: &mut AsyncContext<'_>) -> Poll<Result<(), WebsocketError>> {
+        println!("Polling pending event...");
+
+        if self.pending.is_none() {
+            println!("Polling pending event... no event pending-- done!");
+            return Poll::Ready(Ok(()));
+        }
+
+        println!("Polling connection state for sending...");
+        if let Err(e) = ready!(Pin::new(self.connection.as_mut().unwrap()).poll_ready(cx)) {
+            println!("Polling connection state for sending... failed!");
+
+            // TODO: break out disconnect logic.
+            // TODO: handle different disconnect types (i.e. reconnect logic).
+            self.disconnect();
+            self.connection = None;
+            return Poll::Ready(Err(e));
+        }
+        println!("Polling connection state for sending... done!");
+
+        let pending = self.pending.as_mut();
+
+        println!("sending event...");
+        if let Some(message) = pending {
+            // TODO: ratelimiting
+            if let Err(e) = Pin::new(self.connection.as_mut().unwrap()).start_send(message.clone()) {
+                println!("sending event... failed!");
+
+                self.disconnect();
+                self.connection = None;
+                return Poll::Ready(Err(e));
+            }
+        }
+
+        println!("polling completion of sending event...");
+        if let Err(e) = ready!(Pin::new(self.connection.as_mut().unwrap()).poll_flush(cx)) {
+            println!("polling completion of sending event... failed!");
+
+            self.disconnect();
+            self.connection = None;
+            return Poll::Ready(Err(e));
+        }
+        println!("polling completion of sending event... done!");
+
+        self.pending = None;
+
+        Poll::Ready(Ok(()))
+    }
+
+    pub fn next_event(&mut self) -> PollEvent<Self> {
+        PollEvent {stream: self}
+    }
+
+}
+
+impl Stream for Shard {
+    type Item = Result<Message, ReceiveError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut AsyncContext<'_>) -> Poll<Option<Self::Item>> {
+        let message = loop {
+            // Ensure connection...
+            println!("loop start; connection={:?}, connection_future={:?}", self.connection.is_none(), self.connection_future.is_none());
+
+            {
+                if self.connection.is_none() {
+                    if self.connection_future.is_none() {
+                        println!("setting up connection...");
+    
+                        let base_url = self.resume_gateway_url
+                            .as_deref()
+                            .unwrap_or(GATEWAY_URL);
+            
+                        let gateway_url = format!("{base_url}/?v={API_VERSION}&encoding=json");
+        
+                        self.connection_future = Some(ConnectionFuture(Box::pin(async move {
+                            Ok(connect_async(&gateway_url).await?.0)
+                        })));
+    
+                        println!("setting up connection... done!");
+                    }
+
+                    println!("polling connection...");
+                    let res = ready!(Pin::new(&mut self.connection_future.as_mut().unwrap().0).poll(cx));
+                    println!("polling connection... done!");
+    
+                    // This code is only reachable after ready! returns a completed poll;
+                    // i.e. after a successful connection
+                    self.connection_future = None;
+        
+                    match res {
+                        Ok(connection) => {
+                            println!("connection established!");
+    
+                            self.connection = Some(connection);
+                        }
+                        Err(err) => {
+                            println!("connection failed!");
+    
+                            self.resume_gateway_url = None;
+                            
+                            return Poll::Ready(Some(Err(ReceiveError {
+                                kind: ReceiveErrorKind::Reconnect,
+                                source: Some(Box::new(err)),
+                            })))
+                        }
+                    }
+                }
+    
+            }
+
+            println!("polling heartbeat...");
+
+            if self.heartbeat_interval
+                .as_mut()
+                .map_or(false, |interval| interval.poll_tick(cx).is_ready())
+            {
+                println!("sending heartbeat...");
+                // TODO: Handle zombied connection
+                self.pending = Some(Message::Text(
+                    serde_json::to_string(
+                        &GatewayEvent::new(
+                            Opcode::Heartbeat,
+                            Payload::Heartbeat(self.session.as_ref().map(|s| s.sequence))),
+                    )
+                    .expect("failed to serialise heartbeat")
+
+                ));
+                
+                println!("polling heartbeat status...");
+
+                if ready!(self.poll_handle_pending(cx)).is_err() {
+                    println!("polling heartbeat errored!");
+
+                    return Poll::Ready(Some(Ok(Message::Close(Some(CloseFrame {
+                        code: CloseCode::Abnormal,
+                        reason: Cow::Owned("".to_string()),
+                    })))));
+                }
+
+                println!("sending heartbeat done!...");
+            }
+
+            if !self.identified {
+                self.pending = Some(Message::Text(
+                    serde_json::to_string(
+                        &GatewayEvent::new(
+                            Opcode::Identify,
+                            Payload::Identify(Identify {
+                                compress: false,
+                                intents: self.intents.clone(),
+                                large_threshold: 250,
+                                properties: IdentifyProperties {
+                                    browser: "fishmael".to_string(),
+                                    device: "fishmael".to_string(),
+                                    os: env::consts::OS.to_string(),
+                                },
+                                shard: Some(self.shard_id),
+                                token: self.token.as_mut().to_string(),
+                            })
+                        )
+                    )
+                    .expect("failed to serialise identify")
+                ));
+
+                self.identified = true;
+
+                if ready!(self.poll_handle_pending(cx)).is_err() {
+                    return Poll::Ready(Some(Ok(Message::Close(Some(CloseFrame {
+                        code: CloseCode::Abnormal,
+                        reason: Cow::Owned("".to_string()),
+                    })))));
+                }
+            }
+
+            // TODO: send user gateway messages
+
+            match ready!(Pin::new(self.connection.as_mut().unwrap()).poll_next(cx)) {
+                Some(Ok(message)) => break message,
+                Some(Err(_)) => {
+                    self.disconnect();
+                    return Poll::Ready(Some(Ok(Message::Close(Some(CloseFrame {
+                        code: CloseCode::Abnormal,
+                        reason: Cow::Owned("".to_string()),
+                    })))));
+                }
+                None => {
+                    println!("received none when polling connection");
+                    _ = ready!(Pin::new(self.connection.as_mut().unwrap()).poll_close(cx));
+                    self.connection = None
+                }
+            }
+        };
+
+        match &message {
+            Message::Text(event) => {
+                self.process(event).map_err(|e| {
+                    ReceiveError {
+                        kind: ReceiveErrorKind::Reconnect,
+                        source: Some(e.into()),
+                    }
+                })?;
+            },
+            _ => todo!(), 
+        }
+
+        Poll::Ready(Some(Ok(message)))
+    }
+}
+
+
+#[derive(Debug)]
+pub enum ReceiveErrorKind {
+    Deseralizing{
+        event: String,
+    },
+    Reconnect,
+}
+
+
+#[derive(Debug)]
+pub struct ReceiveError {
+    pub(crate) kind: ReceiveErrorKind,
+    pub(crate) source: Option<Box<dyn std::error::Error + Send + Sync>>,
+}
+
+
+impl Display for ReceiveError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match &self.kind {
+            ReceiveErrorKind::Deseralizing { event } => {
+                f.write_str("failed to deserialize event: ")?;
+                f.write_str(event)
+            },
+            ReceiveErrorKind::Reconnect => f.write_str("failed to reconnect")
+        }
+    }
+}
+
+impl std::error::Error for ReceiveError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source
+            .as_ref()
+            .map(|source| &**source as &(dyn std::error::Error + 'static))
+    }
+}
+
+
+pub struct PollEvent<'a, St: ?Sized> {
+    stream: &'a mut St,
+}
+
+
+impl<'a, St: ?Sized + Stream<Item = Result<Message, ReceiveError>> + Unpin> Future for PollEvent<'a, St> {
+    type Output = Option<Result<Event, ReceiveError>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut AsyncContext<'_>) -> Poll<Self::Output> {
+        let try_from_message = |message| match message {
+            Message::Text(json) => {
+                match serde_json::from_str::<Payload>(&json) {
+                    Ok(payload) => Ok(Into::<Event>::into(payload)),
+                    Err(e) => Err(ReceiveError{
+                        kind: ReceiveErrorKind::Deseralizing { event: json },
+                        source: Some(Box::new(e))
+                    }),
+                }
+            },
+            Message::Close(frame) => Ok(Event::GatewayClose(frame)),
+            v => unreachable!("unhandled message in deserializing: {:?}", v),
+        };
+        
+        loop {
+            match ready!(Pin::new(&mut self.stream).poll_next(cx)) {
+                Some(item) => {
+                    if let Ok(event) = item.and_then(try_from_message) {
+                        return Poll::Ready(Some(Ok(event)));
+                    }
+                }
+                None => return Poll::Ready(None),
+            }
+        }
     }
 }
