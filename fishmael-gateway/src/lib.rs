@@ -8,6 +8,7 @@ use std::{
     borrow::Cow,
     env,
     future::Future,
+    io::ErrorKind as IoErrorKind,
     mem,
     pin::Pin,
     task::{ready, Context as AsyncContext, Poll},
@@ -34,11 +35,13 @@ use fishmael_model::{
     intents::Intents,
 };
 
+pub mod close_code;
 pub mod error;
 pub mod event;
 pub mod poll_event;
 
 use crate::{
+    close_code::LibraryCloseCode,
     error::ReceiveError,
     poll_event::PollEvent,
 };
@@ -82,6 +85,35 @@ impl Session {
 }
 
 
+#[derive(Clone, Debug)]
+enum CloseInitiator {
+    Gateway(Option<u16>),
+    Shard(CloseFrame<'static>),
+    Transport,
+}
+
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShardState {
+    Active,
+    Disconnected{reconnect_attempts: u8},
+    FatallyClosed,
+    Identifying,
+    /// In the middle of event playback during resuming.
+    Resuming,
+}
+
+
+impl ShardState {
+    pub fn from_close_code(close_code: u16) -> Self {
+        match LibraryCloseCode::try_from(close_code) {
+            Ok(close_code) if !close_code.can_reconnect() => Self::FatallyClosed,
+            _ => Self::Disconnected { reconnect_attempts: 0 },
+        }
+    }
+}
+
+
 pub struct Shard {
     connection: Option<Connection>,
     connection_future: Option<ConnectionFuture>,
@@ -93,6 +125,7 @@ pub struct Shard {
     rng: StdRng,
     session: Option<Session>,
     shard_id: ShardId,
+    state: ShardState,
     token: String,
 }
 
@@ -115,10 +148,32 @@ impl Shard {
             rng: StdRng::from_entropy(),
             session: None,
             shard_id,
+            state: ShardState::Disconnected{reconnect_attempts: 0},
             token,
         }
     }
 
+    pub fn state(&self) -> ShardState {
+        self.state
+    }
+
+    fn disconnect(&mut self, initiator: CloseInitiator) {
+        self.heartbeat_interval = None;
+        self.state = match initiator {
+            CloseInitiator::Gateway(Some(close_code)) => ShardState::from_close_code(close_code),
+            _ => ShardState::Disconnected{reconnect_attempts: 0},
+        };
+
+        if let CloseInitiator::Shard(frame) = initiator {
+            // Normal closure so we don't reconnect.
+            if matches!(frame.code, CloseCode::Normal | CloseCode::Away) {
+                self.resume_gateway_url = None;
+                self.session = None;
+            }
+            self.pending = Some(Message::Close(Some(frame)));
+        }
+    }
+    
     fn process(&mut self, event: &str) -> Result<()> {
         let MinimalEvent{op, d: event_data, s: maybe_sequence, t: maybe_type} =
             serde_json::from_str(&event)
@@ -138,9 +193,10 @@ impl Shard {
 
                         self.resume_gateway_url = Some(event.resume_gateway_url);
                         self.session = Some(Session::new(sequence, event.session_id));
+                        self.state = ShardState::Active;
                     },
                     "RESUMED" => {
-                        // TODO: implement resuming
+                        self.state = ShardState::Active;
                     }
                     _ => {}
                 }
@@ -185,20 +241,17 @@ impl Shard {
                         ))
                         .expect("failed to serialise resume event"),
                     ));
+                    self.state = ShardState::Resuming;
                 }
             }
+            Opcode::Reconnect => {
+                println!("Got reconnect!");
+                self.disconnect(CloseInitiator::Shard(LibraryCloseCode::RESUME.into_frame()));
+            },
             _ => todo!()
         }
 
         Ok(())
-    }
-
-    fn disconnect(&mut self) {
-        self.heartbeat_interval = None;
-        self.pending = Some(Message::Close(Some(CloseFrame {
-            code: CloseCode::Normal,
-            reason: Cow::Owned("Cya".to_string())
-        })));
     }
 
     fn poll_handle_pending(&mut self, cx: &mut AsyncContext<'_>) -> Poll<Result<(), WebsocketError>> {
@@ -213,9 +266,7 @@ impl Shard {
         if let Err(e) = ready!(Pin::new(self.connection.as_mut().unwrap()).poll_ready(cx)) {
             println!("Polling connection state for sending... failed!");
 
-            // TODO: break out disconnect logic.
-            // TODO: handle different disconnect types (i.e. reconnect logic).
-            self.disconnect();
+            self.disconnect(CloseInitiator::Transport);
             self.connection = None;
             return Poll::Ready(Err(e));
         }
@@ -229,7 +280,7 @@ impl Shard {
             if let Err(e) = Pin::new(self.connection.as_mut().unwrap()).start_send(message.clone()) {
                 println!("sending event... failed!");
 
-                self.disconnect();
+                self.disconnect(CloseInitiator::Transport);
                 self.connection = None;
                 return Poll::Ready(Err(e));
             }
@@ -239,7 +290,7 @@ impl Shard {
         if let Err(e) = ready!(Pin::new(self.connection.as_mut().unwrap()).poll_flush(cx)) {
             println!("polling completion of sending event... failed!");
 
-            self.disconnect();
+            self.disconnect(CloseInitiator::Transport);
             self.connection = None;
             return Poll::Ready(Err(e));
         }
@@ -264,8 +315,20 @@ impl Stream for Shard {
             // Ensure connection...
             println!("loop start; connection={:?}, connection_future={:?}", self.connection.is_none(), self.connection_future.is_none());
 
-            {
-                if self.connection.is_none() {
+            match self.state {
+                ShardState::FatallyClosed => {
+                    _ = ready!(
+                        Pin::new(
+                            self.connection
+                                .as_mut()
+                                .expect("connection should still exist")
+                        )
+                        .poll_close(cx)
+                    );
+                    self.connection = None;
+                    return Poll::Ready(None);
+                },
+                ShardState::Disconnected { reconnect_attempts } if self.connection.is_none() => {
                     if self.connection_future.is_none() {
                         println!("setting up connection...");
     
@@ -295,11 +358,15 @@ impl Stream for Shard {
                             println!("connection established!");
     
                             self.connection = Some(connection);
+                            self.state = ShardState::Identifying;
                         }
                         Err(err) => {
                             println!("connection failed!");
     
                             self.resume_gateway_url = None;
+                            self.state = ShardState::Disconnected{
+                                reconnect_attempts: reconnect_attempts + 1
+                            };
                             
                             return Poll::Ready(Some(Err(ReceiveError {
                                 kind: ReceiveErrorKind::Reconnect,
@@ -307,9 +374,11 @@ impl Stream for Shard {
                             })))
                         }
                     }
-                }
-    
+                },
+                _ => {},
             }
+
+            // TODO: implement and handle user closing 
 
             println!("polling heartbeat...");
 
@@ -378,8 +447,14 @@ impl Stream for Shard {
 
             match ready!(Pin::new(self.connection.as_mut().unwrap()).poll_next(cx)) {
                 Some(Ok(message)) => break message,
+                Some(Err(WebsocketError::Io(e)))
+                    if e.kind() == IoErrorKind::UnexpectedEof
+                    && matches!(self.state, ShardState::Disconnected{..}) =>
+                {
+                    continue;
+                },
                 Some(Err(_)) => {
-                    self.disconnect();
+                    self.disconnect(CloseInitiator::Transport);
                     return Poll::Ready(Some(Ok(Message::Close(Some(CloseFrame {
                         code: CloseCode::Abnormal,
                         reason: Cow::Owned("".to_string()),
@@ -388,12 +463,26 @@ impl Stream for Shard {
                 None => {
                     println!("received none when polling connection");
                     _ = ready!(Pin::new(self.connection.as_mut().unwrap()).poll_close(cx));
+
+                    if !matches!(self.state, ShardState::Disconnected{..}) {
+                        self.disconnect(CloseInitiator::Transport);
+                    }
+
                     self.connection = None
                 }
             }
         };
 
         match &message {
+            Message::Close(frame) => {
+                // Response is automatically handled by websocket
+                println!("received websocket close message");
+                if !matches!(self.state, ShardState::Disconnected{..}) {
+                    self.disconnect(
+                        CloseInitiator::Gateway(frame.as_ref().map(|f| f.code.into()))
+                    );
+                } 
+            }
             Message::Text(event) => {
                 self.process(event).map_err(|e| {
                     ReceiveError {
