@@ -274,12 +274,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "fishmael-cache"
+version = "0.1.0"
+dependencies = [
+ "redis",
+]
+
+[[package]]
 name = "fishmael-gateway"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "fishmael-model",
  "futures",
+ "futures-core",
  "rand",
  "serde",
  "serde_json",
@@ -963,6 +971,7 @@ dependencies = [
  "anyhow",
  "bitflags",
  "dotenv",
+ "fishmael-cache",
  "fishmael-gateway",
  "fishmael-model",
  "redis",

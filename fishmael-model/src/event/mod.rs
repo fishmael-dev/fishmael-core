@@ -76,9 +76,7 @@ impl From<Opcode> for u8 {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Payload {
-    Bool(bool),
-    Int(u64),
-    OptInt(Option<u64>),
+    Heartbeat(Option<u64>),
     Identify(Identify),
     Hello(Hello),
     Ready(Ready),

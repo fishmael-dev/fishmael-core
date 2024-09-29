@@ -1,0 +1,9 @@
+[package]
+name = "fishmael-cache"
+version.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+redis = { version = "0.27.0", features = ["tokio-comp"] }

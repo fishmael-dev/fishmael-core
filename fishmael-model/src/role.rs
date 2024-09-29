@@ -40,16 +40,28 @@ impl_serde_for_flags!(RoleFlags);
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct RoleTags {
-    #[serde(default)]
+    #[serde(
+        default,
+        skip_serializing_if = "crate::util::is_false",
+        with = "crate::util::null_bool",
+    )]
     pub available_for_purchase: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bot_id: Option<Id<UserMarker>>,
-    #[serde(default)]
+    #[serde(
+        default,
+        skip_serializing_if = "crate::util::is_false",
+        with = "crate::util::null_bool",
+    )]
     pub guild_connections: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub integration_id: Option<Id<IntegrationMarker>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subscription_listing_id: Option<Id<SkuMarker>>,
-    #[serde(default)]
+    #[serde(
+        default,
+        skip_serializing_if = "crate::util::is_false",
+        with = "crate::util::null_bool",
+    )]
     pub premium_subscriber: bool,
 }

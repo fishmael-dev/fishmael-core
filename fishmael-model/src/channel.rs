@@ -1,6 +1,8 @@
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
+use crate::guild::Permissions;
+
 use super::{
     member::Member,
     snowflake::{
@@ -309,8 +311,8 @@ impl From<AutoArchiveDuration> for u16 {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct PermissionOverwrite {
-    // pub allow: Permissions,
-    // pub deny: Permissions,
+    pub allow: Permissions,
+    pub deny: Permissions,
     pub id: Id<ChannelMarker>,
     #[serde(rename = "type")]
     pub kind: PermissionOverwriteType,
@@ -318,7 +320,7 @@ pub struct PermissionOverwrite {
 
 
 #[derive(Clone, Copy, Debug, Serialize, Eq, Hash, PartialEq, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(from = "u8", into = "u8", rename_all = "snake_case")]
 pub enum PermissionOverwriteType {
     Member,
     Role,
