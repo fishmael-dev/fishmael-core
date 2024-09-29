@@ -67,6 +67,10 @@ pub mod null_bool {
             Ok(true)
         }
     
+        fn visit_unit<E: DeError>(self) -> Result<Self::Value, E> {
+            Ok(true)
+        }
+
         fn visit_bool<E: DeError>(self, v: bool) -> Result<Self::Value, E> {
             Ok(v)
         }
@@ -79,4 +83,9 @@ pub mod null_bool {
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
         deserializer.deserialize_option(NullBoolVisitor)
     }
+}
+
+
+pub(crate) fn is_false(value: &bool) -> bool {
+    !value
 }
