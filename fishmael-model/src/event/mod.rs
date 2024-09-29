@@ -4,11 +4,13 @@ pub mod guild_create;
 pub mod hello;
 pub mod identify;
 pub mod ready;
+pub mod resume;
 
 use guild_create::GuildCreate;
 use hello::Hello;
 use identify::Identify;
 use ready::Ready;
+use resume::Resume;
 
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -81,6 +83,7 @@ pub enum Payload {
     Hello(Hello),
     Ready(Ready),
     GuildCreate(GuildCreate),
+    Resume(Resume),
 }
 
 

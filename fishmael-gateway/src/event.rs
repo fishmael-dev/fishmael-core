@@ -7,6 +7,7 @@ use fishmael_model::event::{
     hello::Hello,
     identify::Identify,
     ready::Ready,
+    resume::Resume,
     Opcode,
     Payload,
 };
@@ -28,6 +29,7 @@ pub enum Event {
     GuildCreate(GuildCreate),
     Identify(Identify),
     Ready(Ready),
+    Resume(Resume),
 }
 
 impl Event {
@@ -39,6 +41,7 @@ impl Event {
             Self::GuildCreate(_) => "GuildCreate",
             Self::Identify(_) => "Identify",
             Self::Ready(_) => "Ready",
+            Self::Resume(_) => "Resume",
         }
     }
 }
@@ -50,7 +53,8 @@ impl From<Payload> for Event {
             Payload::Hello(v) => Self::Hello(v),
             Payload::GuildCreate(v) => Self::GuildCreate(v),
             Payload::Identify(v) => Self::Identify(v),
-            Payload::Ready(v) => Self::Ready(v), 
+            Payload::Ready(v) => Self::Ready(v),
+            Payload::Resume(v) => Self::Resume(v),
         }
     }
 }

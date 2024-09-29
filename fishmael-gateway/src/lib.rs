@@ -29,12 +29,7 @@ use tokio_tungstenite::{
 
 use fishmael_model::{
     event::{
-        hello::Hello,
-        identify::{Identify, IdentifyProperties, ShardId},
-        ready::Ready,
-        GatewayEvent,
-        Opcode,
-        Payload,
+        hello::Hello, identify::{Identify, IdentifyProperties, ShardId}, ready::Ready, resume::Resume, GatewayEvent, Opcode, Payload
     },
     intents::Intents,
 };
@@ -155,7 +150,14 @@ impl Shard {
                 }
             },
             Opcode::Heartbeat => {
-                // TODO: send heartbeat
+                self.pending = Some(Message::Text(
+                    serde_json::to_string(
+                        &GatewayEvent::new(
+                            Opcode::Heartbeat,
+                            Payload::Heartbeat(self.session.as_ref().map(|s| s.sequence))),
+                    )
+                    .expect("failed to serialise heartbeat")
+                ));
             },
             Opcode::ACK => {
                 println!("ACK received.");
@@ -171,7 +173,19 @@ impl Shard {
                 interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
                 self.heartbeat_interval = Some(interval);
 
-                // TODO: implement reconnection
+                if let Some(session) = &self.session {
+                    self.pending = Some(Message::Text(
+                        serde_json::to_string(&GatewayEvent::new(
+                            Opcode::Resume,
+                            Payload::Resume(Resume {
+                                seq: session.sequence(),
+                                session_id: session.id().to_string(),
+                                token: self.token.clone(),
+                            })
+                        ))
+                        .expect("failed to serialise resume event"),
+                    ));
+                }
             }
             _ => todo!()
         }
@@ -312,7 +326,6 @@ impl Stream for Shard {
                             Payload::Heartbeat(self.session.as_ref().map(|s| s.sequence))),
                     )
                     .expect("failed to serialise heartbeat")
-
                 ));
                 
                 println!("polling heartbeat status...");
