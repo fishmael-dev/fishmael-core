@@ -277,7 +277,11 @@ dependencies = [
 name = "fishmael-cache"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
+ "fishmael-model",
  "redis",
+ "serde",
 ]
 
 [[package]]

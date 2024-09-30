@@ -42,13 +42,13 @@ pub struct Guild {
     pub joined_at: Option<String>,  // TODO: timestamp struct
     pub large: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    max_members: Option<u64>,
+    pub max_members: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    max_presences: Option<u64>,
+    pub max_presences: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    max_stage_video_channel_users: Option<u32>,
+    pub max_stage_video_channel_users: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    max_video_channel_users: Option<u32>,
+    pub max_video_channel_users: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub member_count: Option<u64>,
     #[serde(default)]
