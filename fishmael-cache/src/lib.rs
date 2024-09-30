@@ -1,20 +1,34 @@
+use anyhow::Context;
 use async_trait::async_trait;
-use redis::{self, aio::ConnectionLike, Cmd, RedisError};
+use redis::{self, aio::MultiplexedConnection, Cmd, RedisError};
 
 pub mod guild;
 
 
 pub struct Cache {
-    pub client: redis::Client
+    pub client: redis::Client,
+    pub con: MultiplexedConnection,
 }
 
 
 impl Cache {
-    pub fn from_url(url: &str) -> Self {
-        Self {
-            client: redis::Client::open(url)
-                .unwrap_or_else(|_| panic!("Failed to open redis client with url {}", url))
-        }
+    pub async fn from_url(url: String) -> anyhow::Result<Self> {
+        let client = redis::Client::open(url.clone())
+            .context(format!("failed to open redis client with url {}", url))?;
+        let con = client.get_multiplexed_async_connection()
+            .await
+            .context("failed to open redis connection")?;
+
+        // TODO: check if/how this affects deserialising
+        //       enabling would be cool as it allows using commands while
+        //       subscribed to a redis channel.
+        // redis::cmd("HELLO")
+        //     .arg("3")
+        //     .exec_async(&mut con)
+        //     .await
+        //     .context("failed to set connection parameters")?;
+
+        Ok(Self{client, con})
     }
 }
 
@@ -24,7 +38,7 @@ pub trait Cacheable {
 
     fn add_fields_to_cmd(&self, cmd: &mut Cmd) -> (); 
 
-    async fn store(&self, con: &mut (impl ConnectionLike + Send)) -> Result<(), RedisError> {
+    async fn store(&self, con: &mut MultiplexedConnection) -> Result<(), RedisError> {
         let mut cmd = redis::cmd("HSET");
         cmd.arg(self.get_key());
         self.add_fields_to_cmd(&mut cmd);

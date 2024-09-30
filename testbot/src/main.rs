@@ -1,9 +1,21 @@
 use tokio;
 use anyhow::{Context, Result};
 use dotenv::dotenv;
-use fishmael_model::{event::{guild_create::GuildCreate, identify::ShardId}, intents::Intents};
-use fishmael_gateway::{event::Event, Shard};
-use fishmael_cache::{guild::CacheableGuild, Cacheable};
+
+use fishmael_model::{
+    event::{guild_create::GuildCreate, identify::ShardId},
+    intents::Intents
+};
+use fishmael_gateway::{
+    event::Event,
+    Shard
+};
+use fishmael_cache::{
+    guild::CacheableGuild,
+    Cache,
+    Cacheable
+};
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,8 +29,7 @@ async fn main() -> Result<()> {
         Intents::GUILDS,
     );
 
-    let r = redis::Client::open(redis_url)?;
-    let mut con = r.get_multiplexed_async_connection().await?;
+    let mut cache = Cache::from_url(redis_url).await?;
 
     while let Some(item) = shard.next_event().await {
         if let Ok(event) = item {
@@ -27,7 +38,7 @@ async fn main() -> Result<()> {
                 Event::GuildCreate(GuildCreate::Unavailable(g)) => {println!("Unavailable Guild: ??? (id: {})", g.id)},
                 Event::GuildCreate(GuildCreate::Available(g)) => {
                     let cg: CacheableGuild = g.into();
-                    cg.store(&mut con).await?;
+                    cg.store(&mut cache.con).await?;
 
                     println!("Available Guild: {} (id: {})", cg.id, cg.name);
                     break
