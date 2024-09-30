@@ -60,6 +60,10 @@ impl<T> Id<T> {
 
         (self.value >> 22) + DISCORD_EPOCH
     }
+
+    pub fn value(&self) -> u64 {
+        self.value
+    }
 }
 
 
