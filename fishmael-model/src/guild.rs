@@ -1,6 +1,8 @@
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
+use crate::snowflake::ApplicationMarker;
+
 use super::{
     channel::Channel,
     member::Member,
@@ -18,9 +20,9 @@ pub struct UnavailableGuild {
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Guild {
-    pub afk_channel_id: Option<u64>,
+    pub afk_channel_id: Option<Id<ChannelMarker>>,
     pub afk_timeout: u32,
-    pub application_id: Option<u64>,
+    pub application_id: Option<Id<ApplicationMarker>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approximate_member_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -89,6 +91,52 @@ pub struct Guild {
     pub verification_level: u8,  // TODO: verificationlevel struct
     // #[serde(default)]
     // pub voice_states: Vec<VoiceState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub widget_channel_id: Option<Id<ChannelMarker>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub widget_enabled: Option<bool>,
+}
+
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PartialGuild {
+    pub afk_channel_id: Option<Id<ChannelMarker>>,
+    pub afk_timeout: u32,
+    pub application_id: Option<Id<ApplicationMarker>>,
+    pub banner: Option<String>,
+    pub default_message_notifications: u8,
+    pub description: Option<String>,
+    pub discovery_splash: Option<String>,
+    pub explicit_content_filter: u8,
+    pub icon: Option<String>,
+    pub id: Id<GuildMarker>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_members: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_presences: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member_count: Option<u64>,
+    pub mfa_level: u8,
+    pub name: String,
+    pub nsfw_level: u8,
+    pub owner_id: Id<UserMarker>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<Permissions>,
+    pub preferred_locale: String,
+    pub premium_progress_bar_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub premium_subscription_count: Option<u64>,
+    pub premium_tier: u8,
+    pub public_updates_channel_id: Option<Id<ChannelMarker>>,
+    pub roles: Vec<Role>,
+    pub rules_channel_id: Option<Id<ChannelMarker>>,
+    pub splash: Option<String>,
+    pub system_channel_flags: SystemChannelFlags,
+    pub system_channel_id: Option<Id<ChannelMarker>>,
+    pub verification_level: u8,
+    pub vanity_url_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub widget_channel_id: Option<Id<ChannelMarker>>,
     #[serde(skip_serializing_if = "Option::is_none")]

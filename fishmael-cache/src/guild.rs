@@ -1,6 +1,6 @@
 use fishmael_model::{
-    guild::{Guild, Permissions, SystemChannelFlags},
-    snowflake::{ChannelMarker, GuildMarker, Id, RoleMarker, UserMarker}
+    guild::{Guild, PartialGuild, Permissions, SystemChannelFlags},
+    snowflake::{ApplicationMarker, ChannelMarker, GuildMarker, Id, RoleMarker, UserMarker}
 };
 use redis::Cmd;
 
@@ -10,7 +10,7 @@ use crate::{cmd::HArgConsumer, Cacheable};
 #[derive(Debug, Clone)]
 pub struct CacheableGuild {
     pub afk_timeout: u32,
-    pub application_id: Option<u64>,
+    pub application_id: Option<Id<ApplicationMarker>>,
     pub approximate_member_count: Option<u32>,
     pub approximate_presence_count: Option<u32>,
     pub banner: Option<String>,
@@ -25,7 +25,7 @@ pub struct CacheableGuild {
     pub icon: Option<String>,
     pub id: Id<GuildMarker>,
     pub joined_at: Option<String>,  // TODO: timestamp struct
-    pub large: bool,
+    pub large: Option<bool>,
     pub max_members: Option<u64>,
     pub max_presences: Option<u64>,
     pub max_stage_video_channel_users: Option<u32>,
@@ -77,7 +77,7 @@ impl From<Guild> for CacheableGuild {
             icon: value.icon.clone(),
             id: value.id,
             joined_at: value.joined_at,
-            large: value.large,
+            large: Some(value.large),
             max_members: value.max_members,
             max_presences: value.max_presences,
             max_stage_video_channel_users: value.max_stage_video_channel_users,
@@ -103,6 +103,57 @@ impl From<Guild> for CacheableGuild {
             system_channel_id: value.system_channel_id,
             threads: value.threads.iter().map(|t| t.id).collect(),
             unavailable: value.unavailable,
+            vanity_url_code: value.vanity_url_code,
+            verification_level: value.verification_level,
+            widget_channel_id: value.widget_channel_id,
+            widget_enabled: value.widget_enabled,
+        }
+    }
+}
+
+
+impl From<PartialGuild> for CacheableGuild {
+    fn from(value: PartialGuild) -> Self {
+        Self {
+            afk_timeout: value.afk_timeout,
+            application_id: value.application_id,
+            approximate_member_count: None,
+            approximate_presence_count: None,
+            banner: value.banner,
+            channels: Vec::new(),
+            default_message_notifications: value.default_message_notifications,
+            description: value.description.clone(),
+            discovery_splash: value.discovery_splash,
+            explicit_content_filter: value.explicit_content_filter,
+            icon: value.icon.clone(),
+            id: value.id,
+            joined_at: None,
+            large: None,
+            max_members: value.max_members,
+            max_presences: value.max_presences,
+            max_stage_video_channel_users: None,
+            max_video_channel_users: None,
+            member_count: value.member_count,
+            members: Vec::new(),
+            mfa_level: value.mfa_level,
+            name: value.name,
+            nsfw_level: value.nsfw_level,
+            owner: value.owner,
+            owner_id: value.owner_id,
+            permissions: value.permissions,
+            preferred_locale: value.preferred_locale,
+            premium_progress_bar_enabled: value.premium_progress_bar_enabled,
+            premium_subscription_count: value.premium_subscription_count,
+            premium_tier: value.premium_tier,
+            public_updates_channel_id: value.public_updates_channel_id,
+            roles: value.roles.iter().map(|r| r.id).collect(),
+            rules_channel_id: value.rules_channel_id,
+            safety_alerts_channel_id: None,
+            splash: value.splash.clone(),
+            system_channel_flags: value.system_channel_flags,
+            system_channel_id: value.system_channel_id,
+            threads: Vec::new(),
+            unavailable: false,
             vanity_url_code: value.vanity_url_code,
             verification_level: value.verification_level,
             widget_channel_id: value.widget_channel_id,

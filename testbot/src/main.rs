@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use dotenv::dotenv;
 
 use fishmael_model::{
-    event::{guild_create::GuildCreate, identify::ShardId},
+    event::{guild_create::GuildCreate, guild_update::GuildUpdate, identify::ShardId},
     intents::Intents
 };
 use fishmael_gateway::{
@@ -41,8 +41,13 @@ async fn main() -> Result<()> {
                     cg.clone().store(&mut cache.con).await?;
 
                     println!("Available Guild: {} (id: {})", cg.id, cg.name);
-                    break
                 },
+                Event::GuildUpdate(GuildUpdate(g)) => {
+                    let cg: CacheableGuild = g.into();
+                    cg.clone().store(&mut cache.con).await?;
+
+                    println!("Updated Guild: {} (id: {})", cg.id, cg.name);
+                }
                 _ => println!("Unhandled!"),
             }
         }

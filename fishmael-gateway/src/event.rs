@@ -3,13 +3,7 @@ use serde_json::Value;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 
 use fishmael_model::event::{
-    guild_create::GuildCreate,
-    hello::Hello,
-    identify::Identify,
-    ready::Ready,
-    resume::Resume,
-    Opcode,
-    Payload,
+    guild_create::GuildCreate, guild_update::GuildUpdate, hello::Hello, identify::Identify, ready::Ready, resume::Resume, Opcode, Payload
 };
 
 #[derive(Deserialize)]
@@ -27,6 +21,7 @@ pub enum Event {
     Hello(Hello),
     GatewayClose(Option<CloseFrame<'static>>),
     GuildCreate(GuildCreate),
+    GuildUpdate(GuildUpdate),
     Identify(Identify),
     Ready(Ready),
     Resume(Resume),
@@ -39,6 +34,7 @@ impl Event {
             Self::Hello(_) => "Hello",
             Self::GatewayClose(_) => "GatewayClose",
             Self::GuildCreate(_) => "GuildCreate",
+            Self::GuildUpdate(_) => "GuildUpdate",
             Self::Identify(_) => "Identify",
             Self::Ready(_) => "Ready",
             Self::Resume(_) => "Resume",
@@ -55,6 +51,7 @@ impl From<Payload> for Event {
             Payload::Identify(v) => Self::Identify(v),
             Payload::Ready(v) => Self::Ready(v),
             Payload::Resume(v) => Self::Resume(v),
+            Payload::GuildUpdate(v) => Self::GuildUpdate(v)
         }
     }
 }

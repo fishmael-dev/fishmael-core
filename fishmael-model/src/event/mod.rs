@@ -1,5 +1,7 @@
+use guild_update::GuildUpdate;
 use serde::{Deserialize, Serialize};
 
+pub mod guild_update;
 pub mod guild_create;
 pub mod hello;
 pub mod identify;
@@ -83,6 +85,7 @@ pub enum Payload {
     Hello(Hello),
     Ready(Ready),
     GuildCreate(GuildCreate),
+    GuildUpdate(GuildUpdate),
     Resume(Resume),
 }
 
