@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
                 Event::GuildCreate(GuildCreate::Unavailable(g)) => {println!("Unavailable Guild: ??? (id: {})", g.id)},
                 Event::GuildCreate(GuildCreate::Available(g)) => {
                     let cg: CacheableGuild = g.into();
-                    cg.store(&mut cache.con).await?;
+                    cg.clone().store(&mut cache.con).await?;
 
                     println!("Available Guild: {} (id: {})", cg.id, cg.name);
                     break

@@ -163,3 +163,14 @@ impl<T> Serialize for Id<T> {
         serializer.serialize_newtype_struct("Id", &self.to_string())
     }
 }
+
+
+#[cfg(feature="redis")]
+impl<T> redis::ToRedisArgs for Id<T> {
+    fn write_redis_args<W>(&self, out: &mut W)
+    where
+        W: ?Sized + redis::RedisWrite
+    {
+        self.value.write_redis_args(out);
+    }
+}

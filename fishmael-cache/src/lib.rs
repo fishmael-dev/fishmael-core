@@ -2,6 +2,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use redis::{self, aio::MultiplexedConnection, Cmd, RedisError};
 
+pub mod cmd;
 pub mod guild;
 
 
@@ -36,14 +37,14 @@ impl Cache {
 pub trait Cacheable {
     fn get_key(&self) -> String;
 
-    fn add_fields_to_cmd(&self, cmd: &mut Cmd) -> (); 
+    fn add_fields_to_cmd(self, cmd: &mut Cmd) -> (); 
 
-    async fn store(&self, con: &mut MultiplexedConnection) -> Result<(), RedisError>
+    async fn store(self, con: &mut MultiplexedConnection) -> Result<(), RedisError>
     where
         Self: Sized
     {
         redis::cmd("HSET")
-            .arg(self.get_key())
+            .arg(&self.get_key())
             .args_from(self)
             .exec_async(con)
             .await
@@ -51,11 +52,11 @@ pub trait Cacheable {
 }
 
 trait ArgsFrom<T> {
-    fn args_from(&mut self, value: T) -> &Self;
+    fn args_from(&mut self, value: T) -> &mut Self;
 }
 
-impl<T: Cacheable> ArgsFrom<&T> for Cmd {
-    fn args_from(&mut self, value: &T) -> &Self {
+impl<T: Cacheable> ArgsFrom<T> for Cmd {
+    fn args_from(&mut self, value: T) -> &mut Self {
         value.add_fields_to_cmd(self);
         self
     }
