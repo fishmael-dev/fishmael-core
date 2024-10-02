@@ -1,6 +1,7 @@
-use fishmael_model::snowflake::Id;
 use itertools::Itertools;
 use redis::{Cmd, ToRedisArgs};
+
+use fishmael_model::snowflake::Id;
 
 
 pub trait HArgProvider<T: ToRedisArgs> {
@@ -50,7 +51,6 @@ impl<T> HArgProvider<Vec<Id<T>>> for Vec<Id<T>> {
         }
     }
 }
-
 
 pub trait HArgConsumer<T: ToRedisArgs> {
     fn hargs<U: HArgProvider<T>>(self, key: &str, value: U) -> Self;

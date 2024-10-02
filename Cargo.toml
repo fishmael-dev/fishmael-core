@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "fishmael-cache",
+    "fishmael-cache-derive",
     "fishmael-gateway",
     "fishmael-model",
     "testbot",
