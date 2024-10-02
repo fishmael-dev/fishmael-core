@@ -279,6 +279,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "fishmael-cache-core",
+ "fishmael-cache-derive",
  "fishmael-model",
  "itertools 0.13.0",
  "redis",
@@ -286,9 +288,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "fishmael-cache-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bitflags",
+ "fishmael-model",
+ "itertools 0.13.0",
+ "redis",
+]
+
+[[package]]
 name = "fishmael-cache-derive"
 version = "0.1.0"
 dependencies = [
+ "fishmael-cache-core",
+ "proc-macro2",
+ "quote",
  "syn",
 ]
 

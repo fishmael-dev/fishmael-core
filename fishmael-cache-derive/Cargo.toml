@@ -7,5 +7,8 @@ edition.workspace = true
 proc-macro = true
 
 [dependencies]
+proc-macro2 = "1.0.86"
+quote = "1.0.37"
 syn = "2.0.79"
 
+fishmael-cache-core = { version = "0.1.0", path = "../fishmael-cache-core" }

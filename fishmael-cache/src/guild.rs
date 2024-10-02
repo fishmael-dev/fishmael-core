@@ -1,13 +1,11 @@
+use fishmael_cache_core::KeyProvider;
+use fishmael_cache_derive::Cacheable;
 use fishmael_model::{
-    guild::{Guild, PartialGuild, Permissions, SystemChannelFlags},
+    guild::{Guild, PartialGuild},
     snowflake::{ApplicationMarker, ChannelMarker, GuildMarker, Id, RoleMarker, UserMarker}
 };
-use redis::Cmd;
 
-use crate::{cmd::HArgConsumer, Cacheable};
-
-
-#[derive(Debug, Clone)]
+#[derive(Cacheable, Clone, Debug)]
 pub struct CacheableGuild {
     pub afk_timeout: u32,
     pub application_id: Option<Id<ApplicationMarker>>,
@@ -37,7 +35,7 @@ pub struct CacheableGuild {
     pub nsfw_level: u8,  // TODO: nsfwlevel struct
     pub owner_id: Id<UserMarker>,
     pub owner: Option<bool>,
-    pub permissions: Option<Permissions>,
+    pub permissions: Option<u64>,
     pub preferred_locale: String,
     pub premium_progress_bar_enabled: bool,
     pub premium_subscription_count: Option<u64>,
@@ -50,7 +48,7 @@ pub struct CacheableGuild {
     pub splash: Option<String>,
     // pub stage_instances: Vec<StageInstance>,
     // pub stickers: Vec<Sticker>,
-    pub system_channel_flags: SystemChannelFlags,
+    pub system_channel_flags: u64,
     pub system_channel_id: Option<Id<ChannelMarker>>,
     pub threads: Vec<Id<ChannelMarker>>,
     pub unavailable: bool,
@@ -59,6 +57,12 @@ pub struct CacheableGuild {
     // pub voice_states: Vec<VoiceState>,
     pub widget_channel_id: Option<Id<ChannelMarker>>,
     pub widget_enabled: Option<bool>,
+}
+
+impl KeyProvider for CacheableGuild {
+    fn get_key(&self) -> String {
+        format!("guild:{}", self.id)
+    }
 }
 
 impl From<Guild> for CacheableGuild {
@@ -89,7 +93,7 @@ impl From<Guild> for CacheableGuild {
             nsfw_level: value.nsfw_level,
             owner: value.owner,
             owner_id: value.owner_id,
-            permissions: value.permissions,
+            permissions: value.permissions.map(|flag| flag.bits()),
             preferred_locale: value.preferred_locale,
             premium_progress_bar_enabled: value.premium_progress_bar_enabled,
             premium_subscription_count: value.premium_subscription_count,
@@ -99,7 +103,7 @@ impl From<Guild> for CacheableGuild {
             rules_channel_id: value.rules_channel_id,
             safety_alerts_channel_id: value.safety_alerts_channel_id,
             splash: value.splash.clone(),
-            system_channel_flags: value.system_channel_flags,
+            system_channel_flags: value.system_channel_flags.bits(),
             system_channel_id: value.system_channel_id,
             threads: value.threads.iter().map(|t| t.id).collect(),
             unavailable: value.unavailable,
@@ -140,7 +144,7 @@ impl From<PartialGuild> for CacheableGuild {
             nsfw_level: value.nsfw_level,
             owner: value.owner,
             owner_id: value.owner_id,
-            permissions: value.permissions,
+            permissions: value.permissions.map(|flag| flag.bits()),
             preferred_locale: value.preferred_locale,
             premium_progress_bar_enabled: value.premium_progress_bar_enabled,
             premium_subscription_count: value.premium_subscription_count,
@@ -150,7 +154,7 @@ impl From<PartialGuild> for CacheableGuild {
             rules_channel_id: value.rules_channel_id,
             safety_alerts_channel_id: None,
             splash: value.splash.clone(),
-            system_channel_flags: value.system_channel_flags,
+            system_channel_flags: value.system_channel_flags.bits(),
             system_channel_id: value.system_channel_id,
             threads: Vec::new(),
             unavailable: false,
@@ -159,58 +163,5 @@ impl From<PartialGuild> for CacheableGuild {
             widget_channel_id: value.widget_channel_id,
             widget_enabled: value.widget_enabled,
         }
-    }
-}
-
-
-impl Cacheable for CacheableGuild {
-    fn get_key(&self) -> String {
-        format!("guild:{}", self.id)
-    }
-
-    fn add_fields_to_cmd(self, cmd: &mut Cmd) -> () {
-        cmd.hargs("afk_timeout", self.afk_timeout)
-            .hargs("application_id", self.application_id)
-            .hargs("approximate_member_count", self.approximate_member_count)
-            .hargs("approximate_presence_count", self.approximate_presence_count)
-            .hargs("banner", self.banner)
-            .hargs("channels", self.channels)
-            .hargs("default_message_notifications", self.default_message_notifications)
-            .hargs("description", self.description)
-            .hargs("discovery_splash", self.discovery_splash)
-            .hargs("explicit_content_filter", self.explicit_content_filter)
-            .hargs("icon", self.icon)
-            .hargs("id", self.id)
-            .hargs("joined_at", self.joined_at)
-            .hargs("large", self.large)
-            .hargs("max_members", self.max_members)
-            .hargs("max_presences", self.max_presences)
-            .hargs("max_stage_video_channel_users", self.max_stage_video_channel_users)
-            .hargs("max_video_channel_users", self.max_video_channel_users)
-            .hargs("member_count", self.member_count)
-            .hargs("members", self.members)
-            .hargs("mfa_level", self.mfa_level)
-            .hargs("name", self.name)
-            .hargs("nsfw_level", self.nsfw_level)
-            .hargs("owner", self.owner)
-            .hargs("owner_id", self.owner_id)
-            .hargs("permissions", self.permissions.map(|flag| flag.bits()))
-            .hargs("preferred_locale", self.preferred_locale)
-            .hargs("premium_progress_bar_enabled", self.premium_progress_bar_enabled)
-            .hargs("premium_subscription_count", self.premium_subscription_count)
-            .hargs("premium_tier", self.premium_tier)
-            .hargs("public_updates_channel_id", self.public_updates_channel_id)
-            .hargs("roles", self.roles)
-            .hargs("rules_channel_id", self.rules_channel_id)
-            .hargs("safety_alerts_channel_id", self.safety_alerts_channel_id)
-            .hargs("splash", self.splash)
-            .hargs("system_channel_flags", self.system_channel_flags.bits())
-            .hargs("system_channel_id", self.system_channel_id)
-            .hargs("threads", self.threads)
-            .hargs("unavailable", self.unavailable)
-            .hargs("vanity_url_code", self.vanity_url_code)
-            .hargs("verification_level", self.verification_level)
-            .hargs("widget_channel_id", self.widget_channel_id)
-            .hargs("widget_enabled", self.widget_enabled);
     }
 }

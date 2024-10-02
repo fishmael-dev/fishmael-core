@@ -1,8 +1,8 @@
 use anyhow::Context;
-use async_trait::async_trait;
-use redis::{self, aio::{ConnectionLike, MultiplexedConnection}, Cmd, RedisError};
+use redis::{self, aio::MultiplexedConnection};
 
-pub mod cmd;
+pub use fishmael_cache_core::Cacheable;
+
 pub mod guild;
 
 
@@ -30,34 +30,5 @@ impl Cache {
         //     .context("failed to set connection parameters")?;
 
         Ok(Self{client, con})
-    }
-}
-
-#[async_trait]
-pub trait Cacheable {
-    fn get_key(&self) -> String;
-
-    fn add_fields_to_cmd(self, cmd: &mut Cmd) -> (); 
-
-    async fn store<T: ConnectionLike + Send>(self, con: &mut T) -> Result<(), RedisError>
-    where
-        Self: Sized
-    {
-        redis::cmd("HSET")
-            .arg(&self.get_key())
-            .args_from(self)
-            .exec_async(con)
-            .await
-    }
-}
-
-trait ArgsFrom<T> {
-    fn args_from(&mut self, value: T) -> &mut Self;
-}
-
-impl<T: Cacheable> ArgsFrom<T> for Cmd {
-    fn args_from(&mut self, value: T) -> &mut Self {
-        value.add_fields_to_cmd(self);
-        self
     }
 }
