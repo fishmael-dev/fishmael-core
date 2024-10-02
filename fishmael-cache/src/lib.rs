@@ -1,6 +1,6 @@
 use anyhow::Context;
 use async_trait::async_trait;
-use redis::{self, aio::MultiplexedConnection, Cmd, RedisError};
+use redis::{self, aio::{ConnectionLike, MultiplexedConnection}, Cmd, RedisError};
 
 pub mod cmd;
 pub mod guild;
@@ -39,7 +39,7 @@ pub trait Cacheable {
 
     fn add_fields_to_cmd(self, cmd: &mut Cmd) -> (); 
 
-    async fn store(self, con: &mut MultiplexedConnection) -> Result<(), RedisError>
+    async fn store<T: ConnectionLike + Send>(self, con: &mut T) -> Result<(), RedisError>
     where
         Self: Sized
     {
