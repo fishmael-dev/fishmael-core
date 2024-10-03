@@ -4,7 +4,7 @@ use redis::{self, aio::MultiplexedConnection};
 pub use fishmael_cache_core::Cacheable;
 
 pub mod guild;
-
+pub mod interaction;
 
 pub struct Cache {
     pub client: redis::Client,

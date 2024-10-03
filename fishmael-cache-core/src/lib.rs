@@ -7,14 +7,16 @@ mod hargs;
 pub use hargs::ToRedisHArgs;
 
 
-pub trait KeyProvider {
+pub trait RedisKeyProvider {
     fn get_key(&self) -> String;
 }
 
-#[async_trait]
-pub trait Cacheable: KeyProvider {
+pub trait RedisFieldProvider {
     fn add_fields_to_cmd(self, cmd: &mut Cmd) -> (); 
+}
 
+#[async_trait]
+pub trait Cacheable: RedisKeyProvider + RedisFieldProvider {
     async fn store<T: ConnectionLike + Send>(self, con: &mut T) -> Result<(), RedisError>
     where
         Self: Sized
@@ -25,7 +27,10 @@ pub trait Cacheable: KeyProvider {
             .exec_async(con)
             .await
     }
+}
 
+#[async_trait]
+pub trait Streamable: RedisKeyProvider + RedisFieldProvider {
     async fn stream<T: ConnectionLike + Send>(
         self,
         con: &mut T,
@@ -52,7 +57,7 @@ trait ArgsFrom<T> {
     fn args_from(&mut self, value: T) -> &mut Self;
 }
 
-impl<T: Cacheable> ArgsFrom<T> for Cmd {
+impl<T: RedisFieldProvider> ArgsFrom<T> for Cmd {
     fn args_from(&mut self, value: T) -> &mut Self {
         value.add_fields_to_cmd(self);
         self

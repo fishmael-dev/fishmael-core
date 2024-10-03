@@ -1,12 +1,12 @@
 
 use std::borrow::Cow;
 
-use fishmael_cache_core::KeyProvider;
-use fishmael_cache_derive::Cacheable;
+use fishmael_cache_core::{Cacheable, RedisKeyProvider};
+use fishmael_cache_derive::RedisFieldProvider;
 
 use twilight_model::guild::{Guild, PartialGuild};
 
-#[derive(Cacheable, Clone, Debug)]
+#[derive(RedisFieldProvider, Clone, Debug)]
 pub struct CacheableGuild {
     pub afk_timeout: u16,
     pub application_id: Option<u64>,
@@ -60,11 +60,13 @@ pub struct CacheableGuild {
     pub widget_enabled: Option<bool>,
 }
 
-impl KeyProvider for CacheableGuild {
+impl RedisKeyProvider for CacheableGuild {
     fn get_key(&self) -> String {
         format!("guild:{}", self.id)
     }
 }
+
+impl Cacheable for CacheableGuild {}
 
 impl From<Guild> for CacheableGuild {
     fn from(value: Guild) -> Self {
@@ -76,7 +78,7 @@ impl From<Guild> for CacheableGuild {
             banner: value.banner.map(|b| b.bytes().to_vec()),
             channels: value.channels.iter().map(|c| c.id.into()).collect(),
             default_message_notifications: value.default_message_notifications.into(),
-            description: value.description.clone(),
+            description: value.description,
             discovery_splash: value.discovery_splash.map(|d| d.bytes().to_vec()),
             emojis: value.emojis.iter().map(|e| e.id.into()).collect(),
             explicit_content_filter: value.explicit_content_filter.into(),
@@ -131,7 +133,7 @@ impl From<PartialGuild> for CacheableGuild {
             banner: value.banner.map(|b| b.bytes().to_vec()),
             channels: Vec::new(),
             default_message_notifications: value.default_message_notifications.into(),
-            description: value.description.clone(),
+            description: value.description,
             discovery_splash: value.discovery_splash.map(|d| d.bytes().to_vec()),
             emojis: Vec::new(),
             explicit_content_filter: value.explicit_content_filter.into(),
