@@ -28,17 +28,15 @@ fn make_impl(data: &Data) -> TokenStream {
         Data::Struct(ref inner_data) => {
             match inner_data.fields {
                 Fields::Named(ref fields) => {
-                    let mut quote = quote!(cmd);
-                    for field in fields.named.iter() {
+                    let body = fields.named.iter().map(|field| {
                         let name = &field.ident;
-                        let ty = &field.ty;
                         let name_str = name.as_ref().map(|n| n.to_string());
-                        quote = quote_spanned! {
-                            field.span()=> ::fishmael_cache_core::HArgConsumer::<#ty>::hargs(#quote, #name_str, self.#name)
+                        quote_spanned! {
+                            field.span()=>::fishmael_cache_core::ToRedisHArgs::write_redis_hargs(&self.#name, #name_str, cmd);
                         }
-                    };
+                    });
 
-                    quote!(#quote;)
+                    quote!(#(#body)*)
                 },
                 Fields::Unnamed(_) | Fields::Unit => unimplemented!()
             }

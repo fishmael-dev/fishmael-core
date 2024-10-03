@@ -4,7 +4,7 @@ use twilight_model::gateway::ShardId;
 
 mod hargs;
 
-pub use hargs::{HArgConsumer, HArgProvider};
+pub use hargs::ToRedisHArgs;
 
 
 pub trait KeyProvider {

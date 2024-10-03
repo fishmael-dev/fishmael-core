@@ -1,67 +1,53 @@
-use std::fmt::Error;
-
 use itertools::Itertools;
 use redis::{Cmd, ToRedisArgs};
 
 
-pub trait HArgProvider<T: ToRedisArgs> {
-    fn to_arg(self) -> Result<impl ToRedisArgs, Error>;
-
-    fn to_hargs_for(self, cmd: &mut Cmd, key: &str) -> ()
-    where
-        Self: Sized
-    {
-        if let Ok(arg) = self.to_arg() {
-            cmd.arg(key).arg(arg);
-        }
-    }        
+pub trait ToRedisHArgs<T: ToRedisArgs> {
+    fn write_redis_hargs(&self, key: &str, cmd: &mut Cmd) -> ();
 }
 
-macro_rules! impl_harg_provider_for {
-    ($($t:ty),+) => {
-        $(
-            impl HArgProvider<$t> for $t {
-                fn to_arg(self) -> Result<impl ToRedisArgs, Error> {
-                    Ok(self)
-                }
+macro_rules! impl_to_redis_hargs_for {
+    (&$lt:lifetime $t:ty) => {
+        impl <$lt> ToRedisHArgs<&$lt $t> for &$lt $t {
+            fn write_redis_hargs(&self, key: &str, cmd: &mut Cmd) -> () {
+                key.write_redis_args(cmd);
+                self.write_redis_args(cmd);
             }
-        )*
+        }
+    };
+    ($t:ty) => {
+        impl ToRedisHArgs<$t> for $t {
+            fn write_redis_hargs(&self, key: &str, cmd: &mut Cmd) -> () {
+                key.write_redis_args(cmd);
+                self.write_redis_args(cmd);
+            }
+        }
     };
 }
 
-impl_harg_provider_for!(u8, u16, u32, u64, usize);
-impl_harg_provider_for!(bool);
-impl_harg_provider_for!(String);
+impl_to_redis_hargs_for!(u8);
+impl_to_redis_hargs_for!(u16);
+impl_to_redis_hargs_for!(u32);
+impl_to_redis_hargs_for!(u64);
+impl_to_redis_hargs_for!(usize);
+impl_to_redis_hargs_for!(bool);
+impl_to_redis_hargs_for!(String);
+impl_to_redis_hargs_for!(&'a str);
 
-impl<'a> HArgProvider<&'a str> for &str {
-    fn to_arg(self) -> Result<impl ToRedisArgs, Error> {
-        Ok(self)
+impl<T: ToRedisArgs> ToRedisHArgs<Option<T>> for Option<T> {
+    fn write_redis_hargs(&self, key: &str, cmd: &mut Cmd) -> () {
+        if let Some(value) = self {
+            key.write_redis_args(cmd);
+            value.write_redis_args(cmd);
+        }
     }
 }
 
-impl<T: ToRedisArgs> HArgProvider<Option<T>> for Option<T> {
-    fn to_arg(self) -> Result<impl ToRedisArgs, Error> {
-        self.ok_or(Error)
-    }
-}
-
-impl<T: ToString, U: ToRedisArgs> HArgProvider<U> for Vec<T> {
-    fn to_arg(self) -> Result<impl ToRedisArgs, Error> {
-        Ok(
-            self.into_iter()
-                .map(|i| i.to_string())
-                .join(",")
-        )
+impl<T: ToString + ToRedisArgs> ToRedisHArgs<T> for Vec<T> {
+    fn write_redis_hargs(&self, key: &str, cmd: &mut Cmd) -> () {
+        if !self.is_empty() {
+            key.write_redis_args(cmd);
+            self.into_iter().map(ToString::to_string).join(",").write_redis_args(cmd);
+        }
     }
 } 
-
-pub trait HArgConsumer<T: ToRedisArgs> {
-    fn hargs<U: HArgProvider<T>>(self, key: &str, value: U) -> Self;
-}
-
-impl<T: ToRedisArgs> HArgConsumer<T> for &mut Cmd {
-    fn hargs<U: HArgProvider<T>>(self, key: &str, value: U) -> Self {
-        value.to_hargs_for(self, key);
-        self
-    }
-}
