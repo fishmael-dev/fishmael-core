@@ -1,14 +1,22 @@
-use fishmael_model::event::GatewayEvent;
 use futures::Stream;
 use std::{
-    fs, future::Future, pin::Pin, task::{ready, Context as AsyncContext, Poll}
+    fs,
+    future::Future,
+    pin::Pin,
+    task::{
+        ready,
+        Context as AsyncContext,
+        Poll
+    },
 };
-use tokio_tungstenite::tungstenite::Message;
+use twilight_model::gateway::event::Event;
 
-use super::{
+use crate::{
+    deserialize::deserialize,
+    message::Message,
     error::{ReceiveError, ReceiveErrorKind},
-    event::Event,
 };
+
 
 pub struct PollEvent<'a, St: ?Sized> {
     stream: &'a mut St,
@@ -27,18 +35,8 @@ impl<'a, St: ?Sized + Stream<Item = Result<Message, ReceiveError>> + Unpin> Futu
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut AsyncContext<'_>) -> Poll<Self::Output> {
         let try_from_message = |message| match message {
-            Message::Text(json) => {
-                match serde_json::from_str::<GatewayEvent>(&json) {
-                    Ok(GatewayEvent{d: Some(event_data), ..}) => Ok(Some(Into::<Event>::into(event_data))),
-                    Ok(GatewayEvent{d: None, ..}) => Ok(None),
-                    Err(e) => Err(ReceiveError{
-                        kind: ReceiveErrorKind::Deserializing { event: json },
-                        source: Some(Box::new(e))
-                    }),
-                }
-            },
+            Message::Text(json) => deserialize(json).map(|o| o.map(Into::into)),
             Message::Close(frame) => Ok(Some(Event::GatewayClose(frame))),
-            v => unreachable!("unhandled message in deserializing: {:?}", v),
         };
         
         loop {

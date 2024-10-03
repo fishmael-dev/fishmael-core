@@ -2,19 +2,13 @@ use tokio;
 use anyhow::{Context, Result};
 use dotenv::dotenv;
 
-use fishmael_model::{
-    event::{guild_create::GuildCreate, guild_update::GuildUpdate, identify::ShardId},
-    intents::Intents
-};
-use fishmael_gateway::{
-    event::Event,
-    Shard
-};
+use fishmael_gateway::{Intents, Shard, ShardId};
 use fishmael_cache::{
     guild::CacheableGuild,
     Cache,
     Cacheable
 };
+use twilight_model::gateway::event::Event;
 
 
 #[tokio::main]
@@ -33,20 +27,19 @@ async fn main() -> Result<()> {
 
     while let Some(item) = shard.next_event().await {
         if let Ok(event) = item {
-            println!("RECEIVED EVENT: {}", event.name());
+            println!("RECEIVED EVENT: {:?}", event.kind());
             match event {
-                Event::GuildCreate(GuildCreate::Unavailable(g)) => {println!("Unavailable Guild: ??? (id: {})", g.id)},
-                Event::GuildCreate(GuildCreate::Available(g)) => {
-                    let cg: CacheableGuild = g.into();
+                Event::GuildCreate(g) => {
+                    let cg: CacheableGuild = g.0.into();
                     cg.clone().store(&mut cache.con).await?;
 
-                    println!("Available Guild: {} (id: {})", cg.id, cg.name);
+                    println!("GuildCreate: {} (id: {})", cg.id, cg.name);
                 },
-                Event::GuildUpdate(GuildUpdate(g)) => {
-                    let cg: CacheableGuild = g.into();
+                Event::GuildUpdate(g) => {
+                    let cg: CacheableGuild = g.0.into();
                     cg.clone().store(&mut cache.con).await?;
 
-                    println!("Updated Guild: {} (id: {})", cg.id, cg.name);
+                    println!("GuildUpdate: {} (id: {})", cg.id, cg.name);
                 }
                 _ => println!("Unhandled!"),
             }

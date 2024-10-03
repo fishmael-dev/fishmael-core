@@ -1,20 +1,29 @@
+use std::fmt::Error;
+
 use itertools::Itertools;
 use redis::{Cmd, ToRedisArgs};
 
-use fishmael_model::snowflake::Id;
-
 
 pub trait HArgProvider<T: ToRedisArgs> {
-    fn to_hargs_for(self, cmd: &mut Cmd, key: &str) -> ();
+    fn to_arg(self) -> Result<impl ToRedisArgs, Error>;
+
+    fn to_hargs_for(self, cmd: &mut Cmd, key: &str) -> ()
+    where
+        Self: Sized
+    {
+        if let Ok(arg) = self.to_arg() {
+            cmd.arg(key).arg(arg);
+        }
+    }        
 }
 
 macro_rules! impl_harg_provider_for {
     ($($t:ty),+) => {
         $(
             impl HArgProvider<$t> for $t {
-                fn to_hargs_for(self, cmd: &mut Cmd, key: &str) -> () {
-                    cmd.arg(key).arg(self);
-                }        
+                fn to_arg(self) -> Result<impl ToRedisArgs, Error> {
+                    Ok(self)
+                }
             }
         )*
     };
@@ -25,32 +34,26 @@ impl_harg_provider_for!(bool);
 impl_harg_provider_for!(String);
 
 impl<'a> HArgProvider<&'a str> for &str {
-    fn to_hargs_for(self, cmd: &mut Cmd, key: &str) -> () {
-        cmd.arg(key).arg(self);
+    fn to_arg(self) -> Result<impl ToRedisArgs, Error> {
+        Ok(self)
     }
 }
 
 impl<T: ToRedisArgs> HArgProvider<Option<T>> for Option<T> {
-    fn to_hargs_for(self, cmd: &mut Cmd, key: &str) -> () {
-        if let Some(value) = self {
-            cmd.arg(key).arg(value);
-        }
+    fn to_arg(self) -> Result<impl ToRedisArgs, Error> {
+        self.ok_or(Error)
     }
 }
 
-impl<T> HArgProvider<Id<T>> for Id<T> {
-    fn to_hargs_for(self, cmd: &mut Cmd, key: &str) -> () {
-        cmd.arg(key).arg(self);
+impl<T: ToString, U: ToRedisArgs> HArgProvider<U> for Vec<T> {
+    fn to_arg(self) -> Result<impl ToRedisArgs, Error> {
+        Ok(
+            self.into_iter()
+                .map(|i| i.to_string())
+                .join(",")
+        )
     }
-}
-
-impl<T> HArgProvider<Vec<Id<T>>> for Vec<Id<T>> {
-    fn to_hargs_for(self, cmd: &mut Cmd, key: &str) -> () {
-        if !self.is_empty() {
-            cmd.arg(key).arg(self.iter().map(|id| id.value()).join(","));
-        }
-    }
-}
+} 
 
 pub trait HArgConsumer<T: ToRedisArgs> {
     fn hargs<U: HArgProvider<T>>(self, key: &str, value: U) -> Self;

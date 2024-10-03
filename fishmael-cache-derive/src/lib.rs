@@ -31,9 +31,10 @@ fn make_impl(data: &Data) -> TokenStream {
                     let mut quote = quote!(cmd);
                     for field in fields.named.iter() {
                         let name = &field.ident;
+                        let ty = &field.ty;
                         let name_str = name.as_ref().map(|n| n.to_string());
                         quote = quote_spanned! {
-                            field.span()=> ::fishmael_cache_core::HArgConsumer::hargs(#quote, #name_str, self.#name)
+                            field.span()=> ::fishmael_cache_core::HArgConsumer::<#ty>::hargs(#quote, #name_str, self.#name)
                         }
                     };
 

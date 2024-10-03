@@ -16,4 +16,4 @@ tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "sync"] }
 tokio-tungstenite = { version = "0.23.1", features = ["rustls-tls-webpki-roots"] }
 tokio-rustls = { version = "^0.26.0" }
 
-fishmael-model = { version = "0.1.0", path = "../fishmael-model"}
+twilight-model = "0.15.4"

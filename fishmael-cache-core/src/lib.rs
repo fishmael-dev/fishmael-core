@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use fishmael_model::event::identify::ShardId;
 use redis::{self, aio::ConnectionLike, Cmd, RedisError};
+use twilight_model::gateway::ShardId;
 
 mod hargs;
 

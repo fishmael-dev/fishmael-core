@@ -1,57 +1,93 @@
-use serde::Deserialize;
-use serde_json::Value;
-use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+// use serde::Deserialize;
+// use serde_json::Value;
+// use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 
-use fishmael_model::event::{
-    guild_create::GuildCreate, guild_update::GuildUpdate, hello::Hello, identify::Identify, ready::Ready, resume::Resume, Opcode, Payload
-};
+// use twilight_model::gateway::{
+//     payload::incoming::*,
+//     OpCode,
+// };
 
-#[derive(Deserialize)]
-pub struct MinimalEvent {
-    pub op: Opcode,
-    pub d: Value,
-    pub s: Option<u64>,
-    pub t: Option<String>,
-}
+// #[derive(Deserialize)]
+// pub struct MinimalEvent {
+//     pub op: OpCode,
+//     pub d: Value,
+//     pub s: Option<u64>,
+//     pub t: Option<String>,
+// }
 
-
-#[derive(Debug)]
-pub enum Event {
-    Heartbeat(Option<u64>),
-    Hello(Hello),
-    GatewayClose(Option<CloseFrame<'static>>),
-    GuildCreate(GuildCreate),
-    GuildUpdate(GuildUpdate),
-    Identify(Identify),
-    Ready(Ready),
-    Resume(Resume),
-}
-
-impl Event {
-    pub fn name(&self) -> &str {
-        match self {
-            Self::Heartbeat(_) => "Heartbeat",
-            Self::Hello(_) => "Hello",
-            Self::GatewayClose(_) => "GatewayClose",
-            Self::GuildCreate(_) => "GuildCreate",
-            Self::GuildUpdate(_) => "GuildUpdate",
-            Self::Identify(_) => "Identify",
-            Self::Ready(_) => "Ready",
-            Self::Resume(_) => "Resume",
-        }
-    }
-}
-
-impl From<Payload> for Event {
-    fn from(value: Payload) -> Self {
-        match value {
-            Payload::Heartbeat(v) => Self::Heartbeat(v),
-            Payload::Hello(v) => Self::Hello(v),
-            Payload::GuildCreate(v) => Self::GuildCreate(v),
-            Payload::Identify(v) => Self::Identify(v),
-            Payload::Ready(v) => Self::Ready(v),
-            Payload::Resume(v) => Self::Resume(v),
-            Payload::GuildUpdate(v) => Self::GuildUpdate(v)
-        }
-    }
-}
+// // #[derive(Clone, Debug, PartialEq)]
+// // pub enum Event {
+// //     AutoModerationActionExecution(AutoModerationActionExecution),
+// //     AutoModerationRuleCreate(AutoModerationRuleCreate),
+// //     AutoModerationRuleDelete(AutoModerationRuleDelete),
+// //     AutoModerationRuleUpdate(AutoModerationRuleUpdate),
+// //     BanAdd(BanAdd),
+// //     BanRemove(BanRemove),
+// //     ChannelCreate(Box<ChannelCreate>),
+// //     ChannelDelete(Box<ChannelDelete>),
+// //     ChannelPinsUpdate(ChannelPinsUpdate),
+// //     ChannelUpdate(Box<ChannelUpdate>),
+// //     CommandPermissionsUpdate(CommandPermissionsUpdate),
+// //     // EntitlementCreate(EntitlementCreate),
+// //     // EntitlementDelete(EntitlementDelete),
+// //     // EntitlementUpdate(EntitlementUpdate),
+// //     GatewayClose(Option<CloseFrame<'static>>),
+// //     GatewayHeartbeat(u64),
+// //     GatewayHeartbeatAck,
+// //     GatewayHello(Hello),
+// //     GatewayInvalidateSession(bool),
+// //     GatewayReconnect,
+// //     GuildAuditLogEntryCreate(Box<GuildAuditLogEntryCreate>),
+// //     GuildCreate(Box<GuildCreate>),
+// //     GuildDelete(GuildDelete),
+// //     GuildEmojisUpdate(GuildEmojisUpdate),
+// //     GuildIntegrationsUpdate(GuildIntegrationsUpdate),
+// //     GuildScheduledEventCreate(Box<GuildScheduledEventCreate>),
+// //     GuildScheduledEventDelete(Box<GuildScheduledEventDelete>),
+// //     GuildScheduledEventUpdate(Box<GuildScheduledEventUpdate>),
+// //     GuildScheduledEventUserAdd(GuildScheduledEventUserAdd),
+// //     GuildScheduledEventUserRemove(GuildScheduledEventUserRemove),
+// //     GuildStickersUpdate(GuildStickersUpdate),
+// //     GuildUpdate(Box<GuildUpdate>),
+// //     IntegrationCreate(Box<IntegrationCreate>),
+// //     IntegrationDelete(IntegrationDelete),
+// //     IntegrationUpdate(Box<IntegrationUpdate>),
+// //     InteractionCreate(Box<InteractionCreate>),
+// //     InviteCreate(Box<InviteCreate>),
+// //     InviteDelete(InviteDelete),
+// //     MemberAdd(Box<MemberAdd>),
+// //     MemberRemove(MemberRemove),
+// //     MemberUpdate(Box<MemberUpdate>),
+// //     MemberChunk(MemberChunk),
+// //     MessageCreate(Box<MessageCreate>),
+// //     MessageDelete(MessageDelete),
+// //     MessageDeleteBulk(MessageDeleteBulk),
+// //     // MessagePollVoteAdd(MessagePollVoteAdd),
+// //     // MessagePollVoteRemove(MessagePollVoteRemove),
+// //     MessageUpdate(Box<MessageUpdate>),
+// //     PresenceUpdate(Box<PresenceUpdate>),
+// //     ReactionAdd(Box<ReactionAdd>),
+// //     ReactionRemove(Box<ReactionRemove>),
+// //     ReactionRemoveAll(ReactionRemoveAll),
+// //     ReactionRemoveEmoji(ReactionRemoveEmoji),
+// //     Ready(Box<Ready>),
+// //     Resumed,
+// //     RoleCreate(RoleCreate),
+// //     RoleDelete(RoleDelete),
+// //     RoleUpdate(RoleUpdate),
+// //     StageInstanceCreate(StageInstanceCreate),
+// //     StageInstanceDelete(StageInstanceDelete),
+// //     StageInstanceUpdate(StageInstanceUpdate),
+// //     ThreadCreate(Box<ThreadCreate>),
+// //     ThreadDelete(ThreadDelete),
+// //     ThreadListSync(ThreadListSync),
+// //     ThreadMemberUpdate(Box<ThreadMemberUpdate>),
+// //     ThreadMembersUpdate(ThreadMembersUpdate),
+// //     ThreadUpdate(Box<ThreadUpdate>),
+// //     TypingStart(Box<TypingStart>),
+// //     UnavailableGuild(UnavailableGuild),
+// //     UserUpdate(UserUpdate),
+// //     VoiceServerUpdate(VoiceServerUpdate),
+// //     VoiceStateUpdate(Box<VoiceStateUpdate>),
+// //     WebhooksUpdate(WebhooksUpdate),
+// // }

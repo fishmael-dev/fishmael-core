@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use error::ReceiveErrorKind;
-use event::MinimalEvent;
+// use event::MinimalEvent;
 use futures::Sink;
 use futures_core::Stream;
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use serde::{de::DeserializeOwned, Deserialize};
 use std::{
-    borrow::Cow,
     env,
     future::Future,
     io::ErrorKind as IoErrorKind,
@@ -21,29 +21,39 @@ use tokio::{
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{
-        protocol::{frame::coding::CloseCode, CloseFrame},
-        Error as WebsocketError, Message,
+        protocol::frame::coding::CloseCode,
+        Error as WebsocketError,
     },
     MaybeTlsStream,
     WebSocketStream,
 };
+use twilight_model::gateway::{
+    event::GatewayEventDeserializer, payload::{
+        incoming::{Hello, Ready},
+        outgoing::{identify::{IdentifyInfo, IdentifyProperties},
+        Heartbeat,
+        Identify,
+        Resume}
+    }, CloseCode as LibraryCloseCode, CloseFrame, OpCode
+};
 
-use fishmael_model::{
-    event::{
-        hello::Hello, identify::{Identify, IdentifyProperties, ShardId}, ready::Ready, resume::Resume, GatewayEvent, Opcode, Payload
-    },
-    intents::Intents,
+pub use twilight_model::gateway::{
+    Intents,
+    ShardId,
+    event::Event,
 };
 
 pub mod close_code;
+pub mod deserialize;
 pub mod error;
 pub mod event;
+pub mod message;
 pub mod poll_event;
 
 use crate::{
-    close_code::LibraryCloseCode,
     error::ReceiveError,
     poll_event::PollEvent,
+    message::Message,
 };
 
 
@@ -53,8 +63,15 @@ const API_VERSION: u8 = 10;
 
 type Connection = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-
 struct ConnectionFuture(Pin<Box<dyn Future<Output = Result<Connection, WebsocketError>> + Send>>);
+
+
+#[derive(Deserialize)]
+struct MinimalEvent<T> {
+    /// Attached data of the gateway event.
+    #[serde(rename = "d")]
+    data: T,
+}
 
 
 pub struct Session {
@@ -166,33 +183,51 @@ impl Shard {
 
         if let CloseInitiator::Shard(frame) = initiator {
             // Normal closure so we don't reconnect.
-            if matches!(frame.code, CloseCode::Normal | CloseCode::Away) {
+            if matches!(frame.code.into(), CloseCode::Normal | CloseCode::Away) {
                 self.resume_gateway_url = None;
                 self.session = None;
             }
             self.pending = Some(Message::Close(Some(frame)));
         }
     }
-    
-    fn process(&mut self, event: &str) -> Result<()> {
-        let MinimalEvent{op, d: event_data, s: maybe_sequence, t: maybe_type} =
-            serde_json::from_str(&event)
-            .context("failed to extract data from event")?;
 
-        match op {
-            Opcode::Dispatch => {
-                let event_type = maybe_type
+    fn parse_event<T: DeserializeOwned>(
+        json: &str,
+    ) -> Result<MinimalEvent<T>, ReceiveError> {
+        serde_json::from_str::<MinimalEvent<T>>(json).map_err(|source| ReceiveError {
+            kind: ReceiveErrorKind::Deserializing {
+                event: json.to_owned(),
+            },
+            source: Some(Box::new(source)),
+        })
+    }
+
+    fn process(&mut self, event: &str) -> Result<()> {
+        let (raw_opcode, maybe_sequence, maybe_event_type) =
+        GatewayEventDeserializer::from_json(event)
+            .ok_or(ReceiveError {
+                kind: ReceiveErrorKind::Deserializing {
+                    event: event.to_owned(),
+                },
+                source: Some("missing opcode".into()),
+            })?
+            .into_parts();
+
+
+        match OpCode::from(raw_opcode) {
+            Some(OpCode::Dispatch) => {
+                let event_type = maybe_event_type
                     .context("failed to get event type")?;
                 let sequence = maybe_sequence
                     .context("failed to get sequence")?;
 
                 match event_type.as_ref() {
                     "READY" => {
-                        let event = serde_json::from_value::<Ready>(event_data)
+                        let event = Self::parse_event::<Ready>(event)
                             .context("failed to deserialise ready event")?;
 
-                        self.resume_gateway_url = Some(event.resume_gateway_url);
-                        self.session = Some(Session::new(sequence, event.session_id));
+                        self.resume_gateway_url = Some(event.data.resume_gateway_url);
+                        self.session = Some(Session::new(sequence, event.data.session_id));
                         self.state = ShardState::Active;
                     },
                     "RESUMED" => {
@@ -205,25 +240,24 @@ impl Shard {
                     session.set_sequence(sequence);
                 }
             },
-            Opcode::Heartbeat => {
+            Some(OpCode::Heartbeat) => {
                 self.pending = Some(Message::Text(
                     serde_json::to_string(
-                        &GatewayEvent::new(
-                            Opcode::Heartbeat,
-                            Payload::Heartbeat(self.session.as_ref().map(|s| s.sequence))),
+                        &Heartbeat::new(self.session.as_ref().map(|s| s.sequence)),
                     )
                     .expect("failed to serialise heartbeat")
                 ));
             },
-            Opcode::ACK => {
-                println!("ACK received.");
+            Some(OpCode::HeartbeatAck) => {
+                println!("heartbeat ack received.");
                 // TODO: track heartbeat responses to check if connection is still alive.
             }
-            Opcode::Hello => {
-                let event = serde_json::from_value::<Hello>(event_data)
+            Some(OpCode::Hello) => {
+                let event = Self::parse_event::<Hello>(event)
                     .context("failed to deserialise hello event")?;
-                let heartbeat_interval = Duration::from_millis(event.heartbeat_interval);
-                let jitter = Duration::from_millis(self.rng.gen_range(0..event.heartbeat_interval));
+
+                let heartbeat_interval = Duration::from_millis(event.data.heartbeat_interval);
+                let jitter = Duration::from_millis(self.rng.gen_range(0..event.data.heartbeat_interval));
 
                 let mut interval = time::interval_at(Instant::now() + jitter, heartbeat_interval);
                 interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -231,24 +265,21 @@ impl Shard {
 
                 if let Some(session) = &self.session {
                     self.pending = Some(Message::Text(
-                        serde_json::to_string(&GatewayEvent::new(
-                            Opcode::Resume,
-                            Payload::Resume(Resume {
-                                seq: session.sequence(),
-                                session_id: session.id().to_string(),
-                                token: self.token.clone(),
-                            })
+                        serde_json::to_string(&Resume::new(
+                            session.sequence(),
+                            session.id(),
+                            self.token.clone(),
                         ))
                         .expect("failed to serialise resume event"),
                     ));
                     self.state = ShardState::Resuming;
                 }
             }
-            Opcode::Reconnect => {
+            Some(OpCode::Reconnect) => {
                 println!("Got reconnect!");
-                self.disconnect(CloseInitiator::Shard(LibraryCloseCode::RESUME.into_frame()));
+                self.disconnect(CloseInitiator::Shard(CloseFrame::RESUME));
             },
-            _ => todo!()
+            _ => println!("received an unknown opcode: {}", raw_opcode)
         }
 
         Ok(())
@@ -275,9 +306,11 @@ impl Shard {
         let pending = self.pending.as_mut();
 
         println!("sending event...");
-        if let Some(message) = pending {
+        if let Some(_message) = &pending {
             // TODO: ratelimiting
-            if let Err(e) = Pin::new(self.connection.as_mut().unwrap()).start_send(message.clone()) {
+
+            let ws_message = pending.unwrap().clone().into_websocket_msg();
+            if let Err(e) = Pin::new(self.connection.as_mut().unwrap()).start_send(ws_message) {
                 println!("sending event... failed!");
 
                 self.disconnect(CloseInitiator::Transport);
@@ -390,9 +423,7 @@ impl Stream for Shard {
                 // TODO: Handle zombied connection
                 self.pending = Some(Message::Text(
                     serde_json::to_string(
-                        &GatewayEvent::new(
-                            Opcode::Heartbeat,
-                            Payload::Heartbeat(self.session.as_ref().map(|s| s.sequence))),
+                        &Heartbeat::new(self.session.as_ref().map(|s| s.sequence))
                     )
                     .expect("failed to serialise heartbeat")
                 ));
@@ -402,10 +433,7 @@ impl Stream for Shard {
                 if ready!(self.poll_handle_pending(cx)).is_err() {
                     println!("polling heartbeat errored!");
 
-                    return Poll::Ready(Some(Ok(Message::Close(Some(CloseFrame {
-                        code: CloseCode::Abnormal,
-                        reason: Cow::Owned("".to_string()),
-                    })))));
+                    return Poll::Ready(Some(Ok(Message::ABNORMAL_CLOSE)));
                 }
 
                 println!("sending heartbeat done!...");
@@ -414,12 +442,12 @@ impl Stream for Shard {
             if !self.identified {
                 self.pending = Some(Message::Text(
                     serde_json::to_string(
-                        &GatewayEvent::new(
-                            Opcode::Identify,
-                            Payload::Identify(Identify {
+                        &Identify::new(
+                            IdentifyInfo {
                                 compress: false,
                                 intents: self.intents.clone(),
                                 large_threshold: 250,
+                                presence: None,
                                 properties: IdentifyProperties {
                                     browser: "fishmael".to_string(),
                                     device: "fishmael".to_string(),
@@ -429,24 +457,25 @@ impl Stream for Shard {
                                 token: self.token.as_mut().to_string(),
                             })
                         )
+                        .expect("failed to serialise identify")
                     )
-                    .expect("failed to serialise identify")
-                ));
+                );
 
                 self.identified = true;
 
                 if ready!(self.poll_handle_pending(cx)).is_err() {
-                    return Poll::Ready(Some(Ok(Message::Close(Some(CloseFrame {
-                        code: CloseCode::Abnormal,
-                        reason: Cow::Owned("".to_string()),
-                    })))));
+                    return Poll::Ready(Some(Ok(Message::ABNORMAL_CLOSE)));
                 }
             }
 
             // TODO: send user gateway messages
 
             match ready!(Pin::new(self.connection.as_mut().unwrap()).poll_next(cx)) {
-                Some(Ok(message)) => break message,
+                Some(Ok(message)) => {
+                    if let Some(message) = Message::from_websocket_msg(&message) {
+                        break message
+                    }
+                },
                 Some(Err(WebsocketError::Io(e)))
                     if e.kind() == IoErrorKind::UnexpectedEof
                     && matches!(self.state, ShardState::Disconnected{..}) =>
@@ -455,10 +484,7 @@ impl Stream for Shard {
                 },
                 Some(Err(_)) => {
                     self.disconnect(CloseInitiator::Transport);
-                    return Poll::Ready(Some(Ok(Message::Close(Some(CloseFrame {
-                        code: CloseCode::Abnormal,
-                        reason: Cow::Owned("".to_string()),
-                    })))));
+                    return Poll::Ready(Some(Ok(Message::ABNORMAL_CLOSE)));
                 }
                 None => {
                     println!("received none when polling connection");
@@ -491,7 +517,6 @@ impl Stream for Shard {
                     }
                 })?;
             },
-            _ => todo!(), 
         }
 
         Poll::Ready(Some(Ok(message)))
