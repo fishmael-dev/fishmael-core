@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use fishmael_model::event::identify::ShardId;
 use redis::{self, aio::ConnectionLike, Cmd, RedisError};
 
 mod hargs;
@@ -20,6 +21,26 @@ pub trait Cacheable: KeyProvider {
     {
         redis::cmd("HSET")
             .arg(&self.get_key())
+            .args_from(self)
+            .exec_async(con)
+            .await
+    }
+
+    async fn stream<T: ConnectionLike + Send>(
+        self,
+        con: &mut T,
+        stream: &str,
+        shard: &ShardId,
+        max_len: u64,
+    ) -> Result<(), RedisError>
+    where
+        Self: Sized
+    {
+        redis::cmd("XADD")
+            .arg(format!("{}:{}", stream, shard.number()))  // stream key
+            .arg("MAXLEN")
+            .arg(max_len)
+            .arg("*")
             .args_from(self)
             .exec_async(con)
             .await
