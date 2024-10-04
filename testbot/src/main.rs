@@ -5,10 +5,15 @@ use dotenv::dotenv;
 use fishmael_gateway::{Intents, Shard, ShardId};
 use fishmael_cache::{
     guild::CacheableGuild,
+    interaction::{StreamableCommandInteraction, StreamableComponentInteraction},
     Cache,
-    Cacheable
+    Cacheable,
+    Streamable,
 };
-use twilight_model::gateway::event::Event;
+use twilight_model::{
+    application::interaction::InteractionData,
+    gateway::event::Event
+};
 
 
 #[tokio::main]
@@ -40,6 +45,32 @@ async fn main() -> Result<()> {
                     cg.clone().store(&mut cache.con).await?;
 
                     println!("GuildUpdate: {} (id: {})", cg.id, cg.name);
+                }
+                Event::InteractionCreate(i) => {
+                    match i.0.data {
+                        Some(InteractionData::ApplicationCommand(_)) => {
+                            let ci = TryInto::<StreamableCommandInteraction>::try_into(i.0)?;
+                            ci.stream(
+                                &mut cache.con,
+                                "command_interaction",
+                                &shard.id(),
+                                100,
+                            ).await?;
+                        },
+                        Some(InteractionData::MessageComponent(_)) => {
+                            let ci = TryInto::<StreamableComponentInteraction>::try_into(i.0)?;
+                            ci.stream(
+                                &mut cache.con,
+                                "message_interaction",
+                                &shard.id(),
+                                100,
+                            ).await?;
+                        },
+                        Some(InteractionData::ModalSubmit(_)) => unimplemented!(),
+                        Some(_) | None => {},
+                    };
+
+                    println!("InteractionCreate!!!");
                 }
                 _ => println!("Unhandled!"),
             }
