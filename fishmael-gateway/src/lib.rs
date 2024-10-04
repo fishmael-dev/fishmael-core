@@ -170,6 +170,10 @@ impl Shard {
         }
     }
 
+    pub fn id(&self) -> ShardId {
+        self.shard_id
+    }
+
     pub fn state(&self) -> ShardState {
         self.state
     }

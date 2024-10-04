@@ -1,7 +1,7 @@
 use anyhow::Context;
 use redis::{self, aio::MultiplexedConnection};
 
-pub use fishmael_cache_core::Cacheable;
+pub use fishmael_cache_core::{Cacheable, Streamable};
 
 pub mod guild;
 pub mod interaction;

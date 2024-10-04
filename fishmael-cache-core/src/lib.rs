@@ -12,7 +12,7 @@ pub trait RedisKeyProvider {
 }
 
 pub trait RedisFieldProvider {
-    fn add_fields_to_cmd(self, cmd: &mut Cmd) -> (); 
+    fn add_fields_to_cmd(self, cmd: &mut Cmd); 
 }
 
 #[async_trait]
@@ -30,7 +30,7 @@ pub trait Cacheable: RedisKeyProvider + RedisFieldProvider {
 }
 
 #[async_trait]
-pub trait Streamable: RedisKeyProvider + RedisFieldProvider {
+pub trait Streamable: RedisFieldProvider {
     async fn stream<T: ConnectionLike + Send>(
         self,
         con: &mut T,
