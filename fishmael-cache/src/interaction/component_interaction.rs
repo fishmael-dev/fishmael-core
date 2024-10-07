@@ -23,7 +23,7 @@ pub struct StreamableComponentInteraction {
     pub locale: Option<String>,
     pub message_id: Option<u64>,
     pub token: String,
-    pub user_id: Option<u64>,
+    pub user_id: u64,
     pub values: Vec<String>,
 }
 
@@ -43,6 +43,14 @@ impl TryFrom<Interaction> for StreamableComponentInteraction {
     fn try_from(value: Interaction) -> Result<Self, Error> {
         match value.data {
             Some(InteractionData::MessageComponent(data)) => {
+                let user_id = value.user
+                    .map_or_else(
+                        || value.member.and_then(|m| m.user.map(|u| u.id)),
+                        |u| Some(u.id)
+                    )
+                    .expect("neither user nor member were provided")
+                    .into();
+
                 Ok(StreamableComponentInteraction {
                     app_permissions: value.app_permissions.map(|f| f.bits()),
                     application_id: value.application_id.into(),
@@ -56,7 +64,7 @@ impl TryFrom<Interaction> for StreamableComponentInteraction {
                     locale: value.locale,
                     message_id: value.message.map(|m| m.id.into()),
                     token: value.token,
-                    user_id: value.user.map(|u| u.id.into()),
+                    user_id: user_id,
                     values: data.values,
                 })
             },
