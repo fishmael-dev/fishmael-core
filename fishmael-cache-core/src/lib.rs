@@ -11,6 +11,10 @@ pub trait RedisKeyProvider {
     fn get_key(&self) -> String;
 }
 
+pub trait RedisStreamKeyProvider {
+    fn get_stream_key(&self, shard: &ShardId) -> String;
+}
+
 pub trait RedisFieldProvider {
     fn add_fields_to_cmd(self, cmd: &mut Cmd); 
 }
@@ -30,11 +34,10 @@ pub trait Cacheable: RedisKeyProvider + RedisFieldProvider {
 }
 
 #[async_trait]
-pub trait Streamable: RedisFieldProvider {
+pub trait Streamable: RedisStreamKeyProvider + RedisFieldProvider {
     async fn stream<T: ConnectionLike + Send>(
         self,
         con: &mut T,
-        stream: &str,
         shard: &ShardId,
         max_len: u64,
     ) -> Result<(), RedisError>
@@ -42,7 +45,7 @@ pub trait Streamable: RedisFieldProvider {
         Self: Sized
     {
         redis::cmd("XADD")
-            .arg(format!("{}:{}", stream, shard.number()))  // stream key
+            .arg(self.get_stream_key(shard))  // stream key
             .arg("MAXLEN")
             .arg(max_len)
             .arg("*")

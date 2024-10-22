@@ -1,11 +1,11 @@
 use std::{fmt::Debug, ops::Deref};
 
 use anyhow::{bail, Error};
-use fishmael_cache_core::Streamable;
+use fishmael_cache_core::{RedisStreamKeyProvider, Streamable};
 use fishmael_cache_derive::RedisFieldProvider;
 use twilight_model::{
     application::interaction::{Interaction, InteractionData},
-    gateway::payload::incoming::InteractionCreate,
+    gateway::{payload::incoming::InteractionCreate, ShardId},
 };
 
 
@@ -25,6 +25,12 @@ pub struct StreamableComponentInteraction {
     pub token: String,
     pub user_id: u64,
     pub values: Vec<String>,
+}
+
+impl RedisStreamKeyProvider for StreamableComponentInteraction {
+    fn get_stream_key(&self, shard: &ShardId) -> String {
+        return format!("component_interaction:{}", shard.number())
+    }
 }
 
 impl Streamable for StreamableComponentInteraction {}
@@ -64,7 +70,7 @@ impl TryFrom<Interaction> for StreamableComponentInteraction {
                     locale: value.locale,
                     message_id: value.message.map(|m| m.id.into()),
                     token: value.token,
-                    user_id: user_id,
+                    user_id,
                     values: data.values,
                 })
             },

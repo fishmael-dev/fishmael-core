@@ -8,10 +8,10 @@ use twilight_model::{
         Interaction,
         InteractionData
     },
-    gateway::payload::incoming::InteractionCreate,
+    gateway::{payload::incoming::InteractionCreate, ShardId},
 };
 
-use fishmael_cache_core::Streamable;
+use fishmael_cache_core::{RedisStreamKeyProvider, Streamable};
 use fishmael_cache_derive::RedisFieldProvider;
 
 
@@ -35,6 +35,12 @@ pub struct StreamableCommandInteraction {
     pub target_id: Option<u64>,
     pub token: String,
     pub user_id: u64,
+}
+
+impl RedisStreamKeyProvider for StreamableCommandInteraction {
+    fn get_stream_key(&self, shard: &ShardId) -> String {
+        return format!("command_interaction:{}", shard.number())
+    }
 }
 
 impl Streamable for StreamableCommandInteraction {}

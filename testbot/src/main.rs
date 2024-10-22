@@ -52,7 +52,6 @@ async fn main() -> Result<()> {
                             let ci = TryInto::<StreamableCommandInteraction>::try_into(i.0)?;
                             ci.stream(
                                 &mut cache.con,
-                                "command_interaction",
                                 &shard.id(),
                                 100,
                             ).await?;
@@ -61,7 +60,6 @@ async fn main() -> Result<()> {
                             let ci = TryInto::<StreamableComponentInteraction>::try_into(i.0)?;
                             ci.stream(
                                 &mut cache.con,
-                                "message_interaction",
                                 &shard.id(),
                                 100,
                             ).await?;
